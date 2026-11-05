@@ -20,6 +20,16 @@ window.HanCloud = (() => {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !isNative, storage: { getItem: kv.get, setItem: kv.set, removeItem: kv.del } },
   }) : null;
 
+  // 驗證信、重設密碼信的連結要回到這個網站（不是 Supabase 預設的 localhost）
+  const backUrl = () => (isNative ? (cfg.webUrl || '') : location.origin + location.pathname) || undefined;
+  // 驗證信點開回來時網址上的結果（成功或錯誤），先讀起來再清掉，避免使用者看到一長串亂碼
+  const urlAuth = (() => {
+    const h = new URLSearchParams(location.hash.slice(1)), q = new URLSearchParams(location.search);
+    const err = h.get('error_code') || q.get('error_code') || h.get('error') || q.get('error');
+    const type = h.get('type') || q.get('type');
+    return { err, errDesc: h.get('error_description') || q.get('error_description'), type, hasToken: h.has('access_token') || q.has('code') };
+  })();
+
   // ---------- 帳號 ----------
   const errText = (e) => {
     const m = String((e && (e.message || e.error_description)) || e || '');
@@ -36,17 +46,19 @@ window.HanCloud = (() => {
     async session() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     onChange(cb) { if (sb) sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signUp(email, password, name) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name, privacy_version: '2026-11-05b', privacy_agreed_at: new Date().toISOString() } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: backUrl(), data: { name, privacy_version: '2026-11-05b', privacy_agreed_at: new Date().toISOString() } } });
       if (error) throw new Error(errText(error));
       return { needConfirm: !data.session };
     },
     async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw new Error(errText(error)); },
     async signOut() { await sb.auth.signOut(); },
-    async resetPassword(email) { const { error } = await sb.auth.resetPasswordForEmail(email); if (error) throw new Error(errText(error)); },
+    async resetPassword(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: backUrl() }); if (error) throw new Error(errText(error)); },
     async updateName(uid, name) {
       const { error } = await sb.auth.updateUser({ data: { name } }); if (error) throw new Error(errText(error));
       await sb.from('profiles').update({ display_name: name }).eq('id', uid);
     },
+    async resend(email) { const { error } = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: backUrl() } }); if (error) throw new Error(errText(error)); },
+    urlAuth,
     async updatePassword(password) { const { error } = await sb.auth.updateUser({ password }); if (error) throw new Error(errText(error)); },
     async deleteAccount(uid) {
       const { error } = await sb.rpc('delete_my_account'); if (error) throw new Error(errText(error));

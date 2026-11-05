@@ -316,6 +316,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
     <div id="aMsg" class="amsg"></div>
     <button class="btn full" id="aGo" type="button">登入</button>
     <button class="x" id="aForgot" type="button">忘記密碼</button>
+    <button class="x" id="aResend" type="button" hidden>重新寄驗證信</button>
     <div class="pnote small" id="a2hs" hidden>想像 App 一樣用？在 Safari 按下方的「分享」按鈕，選「加入主畫面」，桌面就會出現 han in 的圖示。</div>
   </div>
 </div>
@@ -1150,6 +1151,7 @@ function render() {
 }
 function route() {
   const h = location.hash.slice(1);
+  if (/(^|&)(access_token|error|error_code|type)=/.test(h)) return; // 驗證信帶回來的參數，交給登入流程處理
   if (h.startsWith('add=')) { const k = h.slice(4); history.replaceState(null, '', '#home'); route(); openMealEntry(k); return; }
   view = ['home', 'ledger', 'stats', 'assets', 'me'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
   for (const v of ['home', 'ledger', 'stats', 'assets', 'me', 'admin']) $('#v-' + v).hidden = v !== view;
@@ -1843,11 +1845,16 @@ function setupAuthUI() {
     try {
       if (mode === 'up') { const r = await HanCloud.auth.signUp(email, pw, $('#aName').value.trim()); if (r.needConfirm) { msg('已寄出驗證信，請到信箱點連結，再回來登入', true); mode = 'in'; $$('#authSeg button').forEach(b => b.classList.toggle('on', b.dataset.a === 'in')); $('#aNameRow').hidden = $('#aAgreeRow').hidden = true; $('#aGo').textContent = '登入'; } }
       else await HanCloud.auth.signIn(email, pw);
-    } catch (e) { msg(e.message); }
+    } catch (e) { msg(e.message); if (/驗證/.test(e.message)) $('#aResend').hidden = false; }
     $('#aGo').disabled = false;
   };
   $('#aGo').addEventListener('click', go);
   $('#aPw').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+  $('#aResend').addEventListener('click', async () => {
+    const email = $('#aEmail').value.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) { msg('先在上面輸入你註冊的 Email'); return; }
+    try { await HanCloud.auth.resend(email); msg('已重新寄出驗證信，請在 1 小時內點開（只能點一次）', true); } catch (e) { msg(e.message); }
+  });
   $('#aForgot').addEventListener('click', async () => {
     const email = $('#aEmail').value.trim();
     if (!/^\S+@\S+\.\S+$/.test(email)) { msg('先在上面輸入你的 Email'); return; }
@@ -1953,6 +1960,16 @@ async function start() {
   });
 
   setupAuthUI(); showInstallHint(); setupMe(); setupScrollLock();
+  const ua = HanCloud.auth.urlAuth;
+  if (ua.err || ua.hasToken || ua.type) {
+    const m = $('#aMsg');
+    if (ua.err) {
+      m.className = 'amsg err';
+      m.textContent = /expired|otp|invalid|access_denied/i.test(ua.err + ' ' + (ua.errDesc || '')) ? '這個驗證連結已經失效或用過了。先試著直接登入；如果顯示「還沒完成 Email 驗證」，按下面的「重新寄驗證信」。' : '驗證沒有成功：' + (ua.errDesc || ua.err);
+      $('#aResend').hidden = false;
+    } else if (ua.type === 'signup' || ua.type === 'email' || ua.hasToken) { m.className = 'amsg ok'; m.textContent = 'Email 驗證完成！'; setTimeout(() => toast('Email 驗證完成，歡迎使用'), 600); }
+    history.replaceState(null, '', location.pathname + '#home');
+  }
   if (HanCloud.isNative && Native.notif && Native.notif.addListener) Native.notif.addListener('localNotificationActionPerformed', (e) => { const u = e && e.notification && e.notification.extra && e.notification.extra.url; if (u) location.hash = u.replace(/^#/, ''); });
   if (!HanCloud.auth.configured) { showAuth(true); $('#aMsg').className = 'amsg err'; $('#aMsg').textContent = '尚未設定雲端資料庫：請在 www/config.js 填入 Supabase 網址和金鑰。'; return; }
   HanCloud.auth.onChange((ev, sess) => {
