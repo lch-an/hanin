@@ -282,6 +282,7 @@ body.lock{position:fixed;left:0;right:0;overflow:hidden}
 .switch input:checked+span:before{transform:translateX(18px)}
 body.hideamt .num:not(input),body.hideamt #hLeft{filter:blur(7px);cursor:pointer;transition:filter .2s}
 body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
+.t.auto,select.auto{outline:2px solid var(--inc);outline-offset:-2px}
 .steps{display:flex;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
 .steps .st{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
 .steps .st.on{background:var(--accent);color:#fff}
@@ -495,7 +496,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
     <div class="seg" id="typeSeg"><button data-t="expense" class="e">支出</button><button data-t="income" class="i">收入</button><button data-t="transfer">轉帳／繳卡費</button></div>
     <div class="tpl" id="tpl"></div>
     <div id="catBox"><div class="cats" id="cats"></div></div>
-    <div id="viaBox"><div class="lbl">怎麼付（有沒有透過行動支付）</div><div class="accs vias" id="vias"></div></div>
+    <div id="viaBox"><div class="lbl">怎麼付</div><div class="accs vias" id="vias"></div></div>
     <div class="lbl" id="accLbl">付款方式</div>
     <div class="accs" id="accs"></div>
     <div id="recBox" class="rec" hidden></div>
@@ -521,6 +522,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
 <script src="vendor/supabase.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/rewards.js"></script>
+<script src="js/policy-ocr.js"></script>
 <script>
 (() => {
 'use strict';
@@ -531,8 +533,8 @@ const CATS = {
 const CAT = {}; for (const t in CATS) for (const [n, i, c] of CATS[t]) CAT[n] = { i, c };
 CAT['繳卡費'] = { i: '繳', c: '#5a6f8a' }; CAT['娛樂'] = CAT['娛樂'] || { i: '娛', c: '#8a63c2' }; CAT['轉帳'] = { i: '轉', c: '#5a6f8a' };
 const nonLiving = () => new Set(Array.isArray(S.settings.nonLiving) ? S.settings.nonLiving : ['房租', '保費', '訂閱']);
-const VIAS = [['', '直接刷卡／付現', ''], ['LINE Pay', 'LINE Pay', ''], ['Apple Pay', 'Apple Pay', ''], ['全支付', '全支付', '']];
-const viaLabel = (v) => v ? v : '直接刷卡／付現';
+const VIAS = [['', '現金', ''], ['LINE Pay', 'LINE Pay', ''], ['Apple Pay', 'Apple Pay', ''], ['全支付', '全支付', '']];
+const viaLabel = (v) => v ? v : '現金／直接扣款';
 const TYPES = {
   bank:       { label: '銀行存款',      icon: '銀', color: '#2d6a58', liab: false, flow: true },
   cash:       { label: '現金・電子支付', icon: '現', color: '#4f9e6b', liab: false, flow: true },
@@ -638,10 +640,11 @@ function renderSheet() {
   }
   $('#viaBox').hidden = F.type !== 'expense';
   if (F.type !== 'expense') F.via = '';
-  $('#vias').replaceChildren(...VIAS.map(([v, l, i]) => el('button', { type: 'button', class: (F.via === v ? 'on' : ''), text: (i ? i + ' ' : '') + l, onclick: () => { F.via = v; F.accTouched = true; renderSheet(); } })));
+  const accTy = typeOf(accById(F.acc) || {});
+  $('#vias').replaceChildren(...VIAS.map(([v, l, i]) => el('button', { type: 'button', class: (F.via === v && !(v === '' && accTy === 'card') ? 'on' : ''), text: (i ? i + ' ' : '') + l, onclick: () => pickVia(v) })));
   let srcs = F.type === 'expense' ? payables() : F.type === 'income' ? payables().filter(a => typeOf(a) !== 'card') : transferables();
   if (F.type === 'expense' && F.via) { const bound = srcs.filter(a => (a.wallets || []).includes(F.via)); srcs = bound.length ? bound : srcs.filter(a => typeOf(a) === 'card'); }
-  $('#accLbl').textContent = F.type === 'expense' ? (F.via ? `${F.via} 綁的哪張卡／帳戶扣款` : '從哪個帳戶或哪張卡扣款') : F.type === 'income' ? '入帳到' : '從哪裡轉出';
+  $('#accLbl').textContent = F.type === 'expense' ? (F.via ? `${F.via} 綁的哪張卡` : '從哪裡付（預設現金，轉帳或自動扣款可以改）') : F.type === 'income' ? '入帳到' : '從哪裡轉出';
   if (!srcs.some(a => a.id === F.acc)) F.acc = (srcs[0] || {}).id || null;
   $('#accs').replaceChildren(...srcs.map(a => el('button', { type: 'button', class: a.id === F.acc ? 'on' : '', text: a.name, onclick: () => { F.acc = a.id; F.accTouched = true; renderSheet(); } })));
   if (isT) {
@@ -707,6 +710,21 @@ function renderTemplates() {
       renderSheet();
     } }, label, el('small', { text: (t.via ? t.via + '・' : '') + accName(t.account).replace(/卡$/, '') }));
   }));
+}
+// 選「現金」就直接用現金帳戶；選行動支付才讓你挑綁定的卡
+async function pickVia(v) {
+  F.via = v; F.accTouched = true;
+  if (v === '' && F.type === 'expense') {
+    let cash = sorted(S.accounts).find(a => typeOf(a) === 'cash');
+    if (!cash) {
+      try { const ref = await S.db.collection('accounts').add({ name: '現金', type: 'cash', base: 0, baseAt: Date.now(), currency: 'TWD', inNW: true, order: Date.now(), wallets: [] }); cash = { id: ref.id, name: '現金', type: 'cash' }; S.accounts = [...S.accounts, { ...cash, base: 0, baseAt: Date.now(), inNW: true, wallets: [] }]; toast('已幫你建立「現金」帳戶'); } catch {}
+    }
+    if (cash) F.acc = cash.id;
+  } else if (v && F.type === 'expense') {
+    const bound = payables().filter(a => (a.wallets || []).includes(v)), list = bound.length ? bound : payables().filter(a => typeOf(a) === 'card');
+    if (list.length && !list.some(a => a.id === F.acc)) F.acc = list[0].id;
+  }
+  renderSheet();
 }
 function openSheet(tx, presetDate) {
   if (!S.db) { toast('目前無法記帳'); return; }
@@ -1376,6 +1394,31 @@ async function savePolicy(r, name, value, holderIsMe) {
   await S.db.collection('accounts').add({ name: String(name || '').trim().slice(0, 40) || '保單', type: 'insurance', base: Number(value) || 0, baseAt: Date.now(), currency: usd ? 'USD' : 'TWD', fx: usd ? fxRate('USD') : null, inNW: !!holderIsMe, note: [r.holder ? '要保人 ' + r.holder : '', r.policy_type || ''].filter(Boolean).join('・').slice(0, 60), policyId: id, order: Date.now(), wallets: [] });
 }
 
+// ===== 保單截圖辨識：在手機上讀字（Tesseract），截圖不上傳 =====
+let ocrWorker = null;
+function loadScript(src) { return new Promise((ok, bad) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => bad(new Error('辨識元件下載失敗，請確認網路')); document.head.append(s); }); }
+async function getOcr(onProgress) {
+  if (ocrWorker) return ocrWorker;
+  const base = new URL('vendor/tesseract/', location.href).href;
+  if (!window.Tesseract) await loadScript(base + 'tesseract.min.js');
+  ocrWorker = await Tesseract.createWorker('chi_tra', 1, {
+    workerPath: base + 'worker.min.js', corePath: base, langPath: base + 'lang',
+    logger: (m) => { if (onProgress && m && m.status) onProgress(m.status, m.progress || 0); },
+  });
+  return ocrWorker;
+}
+async function ocrImages(files, onProgress) {
+  const w = await getOcr(onProgress);
+  const texts = [];
+  for (let i = 0; i < files.length; i++) {
+    onProgress && onProgress(`reading ${i + 1}/${files.length}`, 0);
+    const { data } = await w.recognize(files[i]);
+    texts.push(data.text);
+  }
+  return texts.join('\n');
+}
+const OCR_STATUS = { 'loading tesseract core': '下載辨識元件', 'initializing tesseract': '準備中', 'loading language traineddata': '下載中文辨識資料', 'initializing api': '準備中', 'recognizing text': '辨識文字中' };
+
 // ===== 保單：手動輸入（免費版）=====
 function openPolicyManual() {
   const m = $('#pModal'), box = $('#pBox');
@@ -1383,7 +1426,7 @@ function openPolicyManual() {
   m.onclick = (e) => { if (e.target === m) close(); };
   const inp = (ph, numeric) => el('input', { class: 't' + (numeric ? ' num' : ''), placeholder: ph, inputmode: numeric ? 'decimal' : 'text' });
   const f = {
-    insurer: inp('例如 國泰人壽'), name: inp('例如 新鍾情終身壽險'), holder: inp('要保人姓名'), insured: inp('被保險人姓名'),
+    insurer: (() => { const i = inp('例如 國泰人壽'); i.setAttribute('list', 'insurerList'); return i; })(), name: inp('例如 新鍾情終身壽險'), holder: inp('要保人姓名'), insured: inp('被保險人姓名'),
     sum: inp('保額', true), premium: inp('每期保費', true), years: inp('例如 20', true), paid: inp('已繳保費總額', true), value: inp('保單價值／解約金', true),
   };
   const type = el('select', { class: 't' }, ...['壽險', '醫療', '意外', '重大疾病', '長照', '失能', '儲蓄', '年金', '投資型', '其他'].map(t => el('option', { value: t, text: t })));
@@ -1415,9 +1458,40 @@ function openPolicyManual() {
     try { await savePolicy(r, [r.insurer, r.policy_name].filter(Boolean).join(' '), r.cash_value, me.value === '1'); toast('已存到資產的「保險」'); close(); S.assetTab = 'insurance'; location.hash = '#assets'; render(); }
     catch { toast('儲存失敗'); }
   } });
+  // 截圖自動填入
+  const ocrMsg = el('div', { class: 'small', style: 'min-height:1.3em;margin-top:6px' });
+  const rawBox = el('div');
+  const ocrFile = el('input', { type: 'file', accept: 'image/*', multiple: 'multiple', hidden: 'hidden' });
+  const ocrBtn = el('label', { class: 'btn', style: 'display:inline-block;cursor:pointer' }, '選擇保單截圖', ocrFile);
+  const setVal = (input, v) => { if (v == null || v === '') return false; input.value = typeof v === 'number' ? String(v) : v; input.classList.add('auto'); return true; };
+  const setSel = (sel, v) => { if (!v || ![...sel.options].some(o => o.value === v)) return false; sel.value = v; sel.classList.add('auto'); return true; };
+  ocrFile.addEventListener('change', async () => {
+    const files = Array.from(ocrFile.files || []).slice(0, 4); ocrFile.value = '';
+    if (!files.length) return;
+    ocrBtn.style.pointerEvents = 'none'; ocrMsg.style.color = '';
+    try {
+      const text = await ocrImages(files, (st, pr) => { put(ocrMsg, el('span', { class: 'spin' }), (OCR_STATUS[st] || (st.startsWith('reading') ? '辨識第 ' + st.split(' ')[1] + ' 張' : '處理中')) + (pr ? ` ${Math.round(pr * 100)}%` : '') + '…'); });
+      const { fields: r, found } = HanPolicyOCR.parsePolicyText(text);
+      let n = 0;
+      n += setVal(f.insurer, r.insurer) + setVal(f.name, r.policy_name) + setVal(f.holder, r.holder) + setVal(f.insured, r.insured);
+      n += setVal(f.sum, r.sum_assured) + setVal(f.premium, r.premium) + setVal(f.years, r.pay_years) + setVal(f.paid, r.paid_total) + setVal(f.value, r.cash_value);
+      n += setSel(type, r.policy_type) + setSel(period, r.premium_period) + (r.currency !== 'TWD' ? setSel(cur, r.currency) : 0);
+      calc();
+      ocrMsg.style.color = n ? 'var(--inc)' : 'var(--warn)';
+      ocrMsg.textContent = n ? `自動填入 ${n} 個欄位（綠框），請對照截圖確認數字。沒填到的可以手動補。` : '這張截圖沒讀到保單欄位。請換一張有「保額、保費、保單價值」等字樣的截圖，或手動填寫。';
+      put(rawBox, el('details', { class: 'small', style: 'margin-top:6px' }, el('summary', { text: '看辨識出的文字' }), el('pre', { style: 'white-space:pre-wrap;font-size:12px;max-height:200px;overflow:auto', text: text.trim() })));
+    } catch (e) { ocrMsg.style.color = 'var(--exp)'; ocrMsg.textContent = (e && e.message) || '辨識失敗，請再試一次'; }
+    ocrBtn.style.pointerEvents = '';
+  });
+  [...Object.values(f), type, period, cur].forEach(x => x.addEventListener('input', () => x.classList.remove('auto')));
   put(box,
     el('div', { class: 'sb' }, el('b', { text: '新增保單' }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
-    el('div', { class: 'small muted', style: 'margin:8px 0', text: '照保險公司 App 或年度對帳單填，不知道的欄位可以空著。' }),
+    el('datalist', { id: 'insurerList' }, ...['國泰人壽', '富邦人壽', '南山人壽', '新光人壽', '台灣人壽', '中國人壽', '全球人壽', '三商美邦人壽', '遠雄人壽', '安聯人壽', '保誠人壽', '宏泰人壽', '元大人壽', '合作金庫人壽', '第一金人壽', '臺銀人壽', '友邦人壽', '法國巴黎人壽', '凱基人壽', '安達人壽'].map(v => el('option', { value: v }))),
+    el('div', { class: 'pnote', style: 'margin-top:8px' },
+      el('b', { text: '看不懂保單？上傳截圖自動填' }),
+      el('div', { class: 'small', style: 'margin:4px 0 8px', text: '保險公司 App 的保單明細、保單首頁或年度對帳單截圖都可以，一次最多 4 張。文字辨識在你的手機上完成，截圖不會上傳到任何地方。第一次使用要下載約 6MB 的辨識資料。' }),
+      ocrBtn, ocrMsg, rawBox),
+    el('div', { class: 'small muted', style: 'margin:8px 0', text: '也可以照保險公司 App 或年度對帳單自己填，不知道的欄位可以空著。' }),
     el('div', { class: 'edit' },
       el('div', { class: 'grid2' }, row('保險公司', f.insurer), row('保單名稱', f.name)),
       el('div', { class: 'grid2' }, row('類型', type), row('幣別', cur)),
