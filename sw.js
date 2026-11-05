@@ -1,7 +1,7 @@
 // han in 輸入記帳：讓「加入主畫面」後的網頁版沒網路也能打開
 // 只快取 App 自己的檔案；記帳資料走 Supabase，不經過這裡。
 // 改了 www 裡的檔案後，把 VERSION 加 1，使用者下次打開就會拿到新版。
-const VERSION = 'hanin-v4';
+const VERSION = 'hanin-v5';
 const FILES = [
   './', 'index.html', 'config.js', 'privacy.html', 'manifest.webmanifest',
   'vendor/supabase.js', 'js/cloud.js', 'js/rewards.js',

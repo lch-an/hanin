@@ -43,6 +43,10 @@ window.HanCloud = (() => {
     async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw new Error(errText(error)); },
     async signOut() { await sb.auth.signOut(); },
     async resetPassword(email) { const { error } = await sb.auth.resetPasswordForEmail(email); if (error) throw new Error(errText(error)); },
+    async updateName(uid, name) {
+      const { error } = await sb.auth.updateUser({ data: { name } }); if (error) throw new Error(errText(error));
+      await sb.from('profiles').update({ display_name: name }).eq('id', uid);
+    },
     async updatePassword(password) { const { error } = await sb.auth.updateUser({ password }); if (error) throw new Error(errText(error)); },
     async deleteAccount(uid) {
       const { error } = await sb.rpc('delete_my_account'); if (error) throw new Error(errText(error));

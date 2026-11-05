@@ -261,6 +261,21 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .diff{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}
 .diff th,.diff td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
 .diff .add{color:var(--inc)} .diff .del{color:var(--exp);text-decoration:line-through}
+.fabfloat{position:fixed;right:18px;bottom:calc(66px + env(safe-area-inset-bottom));width:58px;height:58px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:30px;line-height:1;box-shadow:0 6px 18px rgba(45,106,88,.35);cursor:pointer;z-index:11}
+.prof{display:flex;align-items:center;gap:12px}
+.avatar{width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;flex:none}
+.mrow{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.mrow summary{cursor:pointer;font-size:14px;font-weight:600}
+.mrow0{padding:10px 0;border-bottom:1px solid var(--line);gap:12px}
+.mrow0:last-child{border-bottom:0}
+.switch{position:relative;width:46px;height:28px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:.2s;cursor:pointer}
+.switch span:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch input:checked+span{background:var(--accent)}
+.switch input:checked+span:before{transform:translateX(18px)}
+body.hideamt .num:not(input),body.hideamt #hLeft{filter:blur(7px);cursor:pointer;transition:filter .2s}
+body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
 .steps{display:flex;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
 .steps .st{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
 .steps .st.on{background:var(--accent);color:#fff}
@@ -366,19 +381,25 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
     <div class="card"><h2>每日支出</h2><div class="bars" id="daily"></div><div class="axis"><span>1</span><span>10</span><span>20</span><span id="lastDay">30</span></div></div>
     <div class="card"><h2>支付管道</h2><div id="byVia"></div></div>
     <div class="card"><h2>用哪張卡／帳戶付的</h2><div id="byAcc"></div></div>
-    <div class="card" id="meCard"><h2>我的帳號 <small id="syncLbl"></small></h2>
-      <div class="sb" style="margin-bottom:10px"><div><b style="font-size:14px" id="meEmail"></b><div class="small muted">記帳資料會自動同步，網路斷線時先存在手機，連上後再上傳</div></div><button class="btn ghost" id="logoutBtn" type="button" style="white-space:nowrap">登出</button></div>
-      <div class="sb" id="adminRow" hidden style="margin-bottom:10px"><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">核准 AI 偵測到的信用卡回饋變動</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
-      <div class="sb"><div><b style="font-size:14px">刪除帳號</b><div class="small muted">永久刪除帳號和所有雲端資料，無法復原</div></div><button class="x" id="delAccBtn" type="button" style="color:var(--exp)">刪除</button></div>
+  </section>
+
+  <!-- 我的 -->
+  <section id="v-me" hidden>
+    <div class="top"><h1>我的</h1><span class="small" id="syncLbl"></span></div>
+    <div class="card" id="meCard">
+      <div class="prof"><div class="avatar" id="meAvatar"></div><div class="grow"><b id="meName" style="font-size:17px"></b><div class="small muted" id="meEmail"></div></div><button class="btn ghost" id="logoutBtn" type="button" style="white-space:nowrap">登出</button></div>
+      <div class="small muted" style="margin-top:8px">記帳資料會自動同步到這個帳號；網路斷線時先存在手機，連上後再上傳。</div>
+      <details class="mrow"><summary>修改暱稱</summary><div class="flex" style="margin-top:8px"><input class="t" id="nameIn" maxlength="20" placeholder="暱稱"><button class="btn" id="nameBtn" type="button" style="white-space:nowrap">儲存</button></div><div class="small muted" style="margin-top:4px">保單功能會用暱稱判斷要保人是不是你，建議填本名。</div></details>
+      <details class="mrow"><summary>修改密碼</summary><div class="flex" style="margin-top:8px"><input class="t" id="pwIn" type="password" autocomplete="new-password" placeholder="新密碼（至少 8 字元，含英文和數字）"><button class="btn" id="pwBtn" type="button" style="white-space:nowrap">更新</button></div></details>
+      <div class="sb mrow" id="adminRow" hidden><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">維護信用卡回饋資料（管理員）</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
     </div>
-    <div class="card" id="mealCard"><h2>三餐提醒 <small>到時間問你吃什麼</small></h2><div id="mealBox"></div></div>
-    <div class="card" id="dataCard"><h2>資料與提醒 <small>備份是額外的保險</small></h2>
-      <div class="sb" style="margin-bottom:10px" id="remindRow"><div><b style="font-size:14px">扣款提醒</b><div class="small muted">信用卡扣款日前一天、訂閱扣款當天晚上 8 點提醒你</div></div><button class="btn ghost" id="remindBtn" type="button" style="white-space:nowrap">開啟</button></div>
-      <div class="sb" style="margin-bottom:10px"><div><b style="font-size:14px">匯出備份</b><div class="small muted">下載一份 JSON 檔自己保存</div></div><button class="btn ghost" id="exportBtn" type="button" style="white-space:nowrap">匯出</button></div>
-      <div class="sb"><div><b style="font-size:14px">匯入備份</b><div class="small muted">會用備份檔的內容取代帳號裡目前所有資料</div></div><label class="btn ghost" style="white-space:nowrap;cursor:pointer">選擇檔案<input type="file" id="importFile" accept=".json,application/json" hidden></label></div>
-      <div id="importConfirm" class="edit" hidden></div>
+    <div class="card" id="uiCard"><h2>介面設定 <small>只影響這台裝置</small></h2>
+      <div class="sb mrow0"><div><b style="font-size:14px">首頁最近紀錄</b><div class="small muted">打開 App 時先看清單還是月曆</div></div><div class="seg mini" id="prefHome"><button data-v="list" type="button">清單</button><button data-v="cal" type="button">月曆</button></div></div>
+      <div class="sb mrow0"><div><b style="font-size:14px">資產頁預設分頁</b></div><select class="t" id="prefAsset" style="max-width:130px"></select></div>
+      <div class="sb mrow0"><div><b style="font-size:14px">文字大小</b></div><div class="seg mini" id="prefZoom"><button data-v="1" type="button">標準</button><button data-v="1.12" type="button">大</button><button data-v="1.25" type="button">特大</button></div></div>
+      <div class="sb mrow0"><div><b style="font-size:14px">隱藏金額</b><div class="small muted">在外面打開 App 時，金額先模糊處理，點一下才顯示</div></div><label class="switch"><input type="checkbox" id="prefHide"><span></span></label></div>
     </div>
-    <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">每月生活費預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
+    <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
       <div class="bcalc">
         <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 40029"><span class="small" id="bIncNote"></span></label>
         <label>先存起來的比例（%）<input class="t num" id="bSave" inputmode="numeric"></label>
@@ -407,6 +428,21 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
       <div class="chips" id="nonLiving"></div>
       <div class="small muted" style="margin-top:6px">這些分類一樣可以記帳（例如之後要自己付房租、或自己繳附約保費），只是會算在「固定支出」，不會吃掉生活費預算。</div>
     </div>
+    <div class="card" id="mealCard"><h2>三餐提醒 <small>到時間問你吃什麼</small></h2><div id="mealBox"></div></div>
+    <div class="card" id="dataCard"><h2>資料與提醒 <small>備份是額外的保險</small></h2>
+      <div class="sb" style="margin-bottom:10px" id="remindRow"><div><b style="font-size:14px">扣款提醒</b><div class="small muted">信用卡扣款日前一天、訂閱扣款當天晚上 8 點提醒你</div></div><button class="btn ghost" id="remindBtn" type="button" style="white-space:nowrap">開啟</button></div>
+      <div class="sb" style="margin-bottom:10px"><div><b style="font-size:14px">匯出備份</b><div class="small muted">下載一份 JSON 檔自己保存</div></div><button class="btn ghost" id="exportBtn" type="button" style="white-space:nowrap">匯出</button></div>
+      <div class="sb"><div><b style="font-size:14px">匯入備份</b><div class="small muted">會用備份檔的內容取代帳號裡目前所有資料</div></div><label class="btn ghost" style="white-space:nowrap;cursor:pointer">選擇檔案<input type="file" id="importFile" accept=".json,application/json" hidden></label></div>
+      <div id="importConfirm" class="edit" hidden></div>
+    </div>
+    <div class="card"><h2>關於</h2>
+      <div class="sb mrow0"><span>隱私權政策與個資告知</span><a class="x" href="privacy.html" target="_blank">查看</a></div>
+      <div class="sb mrow0"><span>問題回報與建議</span><a class="x" href="mailto:hanbouger@gmail.com?subject=han%20in%20%E8%BC%B8%E5%85%A5%E8%A8%98%E5%B8%B3%20%E5%9B%9E%E5%A0%B1">寫信給我們</a></div>
+      <div class="sb mrow0"><span>版本</span><span class="small muted" id="appVer">2026.11.05</span></div>
+    </div>
+    <div class="card"><h2>危險區域</h2>
+      <div class="sb"><div><b style="font-size:14px">刪除帳號</b><div class="small muted">永久刪除帳號和所有雲端資料，無法復原。建議先匯出備份。</div></div><button class="x" id="delAccBtn" type="button" style="color:var(--exp)">刪除</button></div>
+    </div>
   </section>
 
   <!-- 資產 -->
@@ -426,7 +462,7 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 
   <!-- 管理員：回饋資料 -->
   <section id="v-admin" hidden>
-    <div class="top"><h1>回饋資料管理</h1><a class="x" href="#stats">返回</a></div>
+    <div class="top"><h1>回饋資料管理</h1><a class="x" href="#me">返回</a></div>
     <div class="card"><h2>卡片與回饋 <small>手動新增或修改，存檔後所有使用者馬上看得到</small></h2>
       <div class="grid2" style="margin-bottom:8px"><select class="t" id="cmBank"></select><button class="btn" id="cmAdd" type="button">新增卡片</button></div>
       <div id="cmList"></div></div>
@@ -438,10 +474,11 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 <nav class="tabs" id="appNav" hidden><div class="in">
   <a href="#home" data-v="home">首頁</a>
   <a href="#ledger" data-v="ledger">明細</a>
-  <span class="fab"><button id="fab" aria-label="記一筆">＋</button></span>
   <a href="#stats" data-v="stats">統計</a>
   <a href="#assets" data-v="assets">資產</a>
+  <a href="#me" data-v="me">我的</a>
 </div></nav>
+<button id="fab" class="fabfloat" aria-label="記一筆" hidden>＋</button>
 
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet" role="dialog" aria-label="記一筆">
@@ -1059,16 +1096,18 @@ function render() {
   if (view === 'home') renderHome();
   if (view === 'ledger' && document.activeElement !== $('#q')) renderLedger();
   if (view === 'stats') renderStats();
+  if (view === 'me' && !document.activeElement?.closest('#budgetCard, #meCard')) renderBudgetCard();
   if (view === 'assets' && !document.activeElement?.closest('#groups, #addAccForm')) renderAssets();
   if ($('#sheet').classList.contains('on')) renderSheet();
 }
 function route() {
   const h = location.hash.slice(1);
   if (h.startsWith('add=')) { const k = h.slice(4); history.replaceState(null, '', '#home'); route(); openMealEntry(k); return; }
-  view = ['home', 'ledger', 'stats', 'assets'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
-  for (const v of ['home', 'ledger', 'stats', 'assets', 'admin']) $('#v-' + v).hidden = v !== view;
+  view = ['home', 'ledger', 'stats', 'assets', 'me'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
+  $('#fab').hidden = ['me', 'admin'].includes(view) || !S.uid;
+  for (const v of ['home', 'ledger', 'stats', 'assets', 'me', 'admin']) $('#v-' + v).hidden = v !== view;
   if (view === 'admin') renderAdmin();
-  if (view === 'stats') renderMeal();
+  if (view === 'me') { renderMeal(); renderMe(); }
   $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
   render(); window.scrollTo(0, 0);
 }
@@ -1594,7 +1633,7 @@ function openSetup(auto) {
       };
       rate.addEventListener('input', calc); calc();
       return [
-        el('div', { class: 'pnote' }, el('b', { text: '算出你每個月可以花多少。' }), el('div', { class: 'small', text: '先存起來的比例建議 10%～30%。這個數字就是首頁圓圈裡的預算，之後在「統計」頁隨時可以改。' })),
+        el('div', { class: 'pnote' }, el('b', { text: '算出你每個月可以花多少。' }), el('div', { class: 'small', text: '先存起來的比例建議 10%～30%。這個數字就是首頁圓圈裡的預算，之後在「我的」頁隨時可以改。' })),
         el('div', { class: 'edit' }, el('div', { class: 'sb' }, el('b', { style: 'font-size:14px', text: '每月先存幾 %' }), el('span', { class: 'flex', style: 'gap:6px;align-items:center' }, rate, '%'))),
         out];
     },
@@ -1631,6 +1670,52 @@ function openSetup(auto) {
           el('button', { class: 'btn', type: 'button', text: last ? '完成' : '下一步', onclick: () => { if (last) finish(); else { W.step++; draw(); box.scrollTop = 0; } } }))));
   };
   draw(); m.hidden = false;
+}
+
+// ===== 我的：個人資料與介面設定 =====
+const PREF = {
+  get(k, d) { try { const v = localStorage.getItem('pref-' + k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('pref-' + k, v); } catch {} },
+};
+function applyPrefs() {
+  const z = Number(PREF.get('zoom', '1')) || 1;
+  document.documentElement.style.zoom = z === 1 ? '' : String(z);
+  document.body.classList.toggle('hideamt', PREF.get('hide', '0') === '1');
+}
+function renderMe() {
+  if (!S.uid) return;
+  const name = (S.me && S.me.name) || '', email = (S.me && S.me.email) || '';
+  $('#meName').textContent = name || '還沒設定暱稱';
+  $('#meEmail').textContent = email;
+  $('#meAvatar').textContent = (name || email || '?').trim().slice(0, 1).toUpperCase();
+  if (document.activeElement !== $('#nameIn')) $('#nameIn').value = name;
+  $$('#prefHome button').forEach(b => b.classList.toggle('on', b.dataset.v === S.homeView));
+  const z = PREF.get('zoom', '1'); $$('#prefZoom button').forEach(b => b.classList.toggle('on', b.dataset.v === z));
+  $('#prefHide').checked = PREF.get('hide', '0') === '1';
+  const sel = $('#prefAsset');
+  if (!sel.options.length) sel.append(el('option', { value: 'all', text: '總覽' }), ...Object.entries(TYPES).map(([k, t]) => el('option', { value: k, text: t.label })));
+  sel.value = S.assetTab || 'all';
+}
+function setupMe() {
+  $$('#prefHome button').forEach(b => b.addEventListener('click', () => { S.homeView = b.dataset.v; try { localStorage.setItem('homeView', S.homeView); } catch {} renderMe(); toast(b.dataset.v === 'cal' ? '首頁會先顯示月曆' : '首頁會先顯示清單'); }));
+  $$('#prefZoom button').forEach(b => b.addEventListener('click', () => { PREF.set('zoom', b.dataset.v); applyPrefs(); renderMe(); }));
+  $('#prefHide').addEventListener('change', (e) => { PREF.set('hide', e.target.checked ? '1' : '0'); applyPrefs(); toast(e.target.checked ? '金額已隱藏，點金額可以暫時顯示' : '金額會直接顯示'); });
+  $('#prefAsset').addEventListener('change', (e) => { S.assetTab = e.target.value; try { localStorage.setItem('assetTab', S.assetTab); } catch {} toast('已更新資產頁預設分頁'); });
+  // 隱藏金額時，點一下金額暫時顯示 5 秒
+  document.addEventListener('click', (e) => {
+    if (!document.body.classList.contains('hideamt') || !e.target.closest('.num:not(input), #hLeft')) return;
+    document.body.classList.add('peek'); clearTimeout(setupMe._t); setupMe._t = setTimeout(() => document.body.classList.remove('peek'), 5000);
+  });
+  $('#nameBtn').addEventListener('click', async () => {
+    const v = $('#nameIn').value.trim().slice(0, 20); if (!v) { toast('請輸入暱稱'); return; }
+    try { await HanCloud.auth.updateName(S.uid, v); S.me.name = v; renderMe(); toast('暱稱已更新'); } catch (e) { toast(e.message || '更新失敗'); }
+  });
+  $('#pwBtn').addEventListener('click', async () => {
+    const pw = $('#pwIn').value;
+    if (pw.length < 8 || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) { toast('密碼至少 8 個字元，要有英文和數字'); return; }
+    try { await HanCloud.auth.updatePassword(pw); $('#pwIn').value = ''; toast('密碼已更新'); } catch (e) { toast(e.message || '更新失敗'); }
+  });
+  applyPrefs();
 }
 
 // ===== 登入流程 =====
@@ -1750,7 +1835,7 @@ async function start() {
     if (!f.hidden) { f.append(el('h2', { text: '新增帳戶或資產' }), accEditor(null, () => { f.hidden = true; f.replaceChildren(); }, S.assetTab !== 'all' ? S.assetTab : 'bank')); window.scrollTo(0, 0); }
   });
 
-  setupAuthUI(); showInstallHint();
+  setupAuthUI(); showInstallHint(); setupMe();
   if (HanCloud.isNative && Native.notif && Native.notif.addListener) Native.notif.addListener('localNotificationActionPerformed', (e) => { const u = e && e.notification && e.notification.extra && e.notification.extra.url; if (u) location.hash = u.replace(/^#/, ''); });
   if (!HanCloud.auth.configured) { showAuth(true); $('#aMsg').className = 'amsg err'; $('#aMsg').textContent = '尚未設定雲端資料庫：請在 www/config.js 填入 Supabase 網址和金鑰。'; return; }
   HanCloud.auth.onChange((ev, sess) => {
@@ -1765,8 +1850,8 @@ async function boot(sess) {
   if (S.uid) return;
   S.uid = sess.user.id; showAuth(false);
   S.me = { email: sess.user.email, name: (sess.user.user_metadata || {}).name || '' };
-  $('#meEmail').textContent = sess.user.email;
-  HanCloud.auth.profile(S.uid).then(p => { S.isAdmin = !!p.is_admin; if (p.display_name) S.me.name = p.display_name; $('#adminRow').hidden = !S.isAdmin; if (location.hash === '#admin') route(); }).catch(() => {});
+  $('#fab').hidden = ['me', 'admin'].includes(view);
+  HanCloud.auth.profile(S.uid).then(p => { S.isAdmin = !!p.is_admin; if (p.display_name) S.me.name = p.display_name; $('#adminRow').hidden = !S.isAdmin; if (view === 'me') renderMe(); if (location.hash === '#admin') route(); }).catch(() => {});
   const timer = setTimeout(() => status('資料還在讀取，網路可能不穩，請稍候。'), 10000);
   const db = HanCloud.openDB(S.uid, (st) => { const l = $('#syncLbl'); l.replaceChildren(el('span', { class: 'syncdot' + (st.online ? '' : ' off') }), st.online ? (st.pending ? `同步中（${st.pending}）` : '已同步') : `離線，${st.pending} 筆待上傳`); });
   S.db = db;
@@ -1775,7 +1860,7 @@ async function boot(sess) {
   if (S.pendingAdd) { const k = S.pendingAdd; S.pendingAdd = null; setTimeout(() => openMealEntry(k), 300); }
   db.collection('accounts').onSnapshot(snap => {
     S.accounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！到「統計」頁按「一步一步設定」，或直接到「資產」新增帳戶。'); S.loaded = true;
+    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！到「我的」頁按「一步一步設定」，或直接到「資產」新增帳戶。'); S.loaded = true;
     if (!S.setupChecked) { S.setupChecked = true; setTimeout(() => { if (!S.accounts.length && !S.settings.setupDone && $('#pModal').hidden) openSetup(true); }, 700); }
     if (!lastExpenseAcc) { const c = sorted(S.accounts).find(a => typeOf(a) === 'card'); lastExpenseAcc = c ? c.id : null; }
     subscribeRecent(); render();
