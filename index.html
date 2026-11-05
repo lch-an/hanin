@@ -24,7 +24,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit}
-.wrap{max-width:720px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(110px + env(safe-area-inset-bottom))}
+.wrap{max-width:720px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(130px + env(safe-area-inset-bottom))}
 .num{font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)} .small{font-size:12.5px}
 .exp{color:var(--exp)} .inc{color:var(--inc)} .warn{color:var(--warn)}
@@ -74,13 +74,14 @@ button{font:inherit;color:inherit}
 .due.soon{background:#fbe9e3} @media (prefers-color-scheme: dark){.due.soon{background:#3a2620}}
 
 /* nav */
-nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);display:flex;justify-content:center;align-items:flex-end;z-index:10;padding-bottom:env(safe-area-inset-bottom)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);display:flex;justify-content:center;align-items:flex-end;z-index:10;padding:6px 8px calc(14px + env(safe-area-inset-bottom))}
 nav.tabs .in{display:flex;width:100%;max-width:560px}
-nav.tabs a{flex:1;text-align:center;padding:16px 2px 16px;color:var(--muted);text-decoration:none;font-size:11.5px;font-weight:500}
+nav.tabs a{flex:1;display:flex;align-items:center;justify-content:center;min-height:58px;padding:6px 2px;color:var(--muted);text-decoration:none;font-size:15px;font-weight:600;border-radius:14px;margin:4px 2px}
+nav.tabs a.on{background:var(--soft)}
 nav.tabs a .i{display:block;font-size:20px;line-height:1.3}
 nav.tabs a.on{color:var(--accent)}
 nav.tabs .fab{flex:0 0 76px;display:flex;justify-content:center}
-nav.tabs .fab button{width:58px;height:58px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:30px;line-height:1;margin-top:-22px;box-shadow:0 6px 18px rgba(45,106,88,.35);cursor:pointer}
+nav.tabs .fab button{width:64px;height:64px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:32px;line-height:1;margin-top:-26px;box-shadow:0 6px 18px rgba(45,106,88,.35);cursor:pointer}
 
 /* sheet */
 .backdrop{position:fixed;inset:0;background:rgba(20,15,10,.38);z-index:30;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -92,6 +93,9 @@ nav.tabs .fab button{width:58px;height:58px;border-radius:50%;border:0;backgroun
 .seg{display:flex;background:var(--soft);border-radius:999px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:500;padding:7px 0;border-radius:999px;cursor:pointer;font-size:14px}
 .seg button.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.vsw{margin:0 4px 12px}
+.vsw a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-weight:600;padding:9px 0;border-radius:999px;font-size:15px}
+.vsw a.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
 .seg button.on.e{color:var(--exp)} .seg button.on.i{color:var(--inc)}
 .tpl{display:flex;gap:6px;overflow-x:auto;margin:10px 0 2px;scrollbar-width:none}
 .tpl{align-items:center}.tpl .tplh{flex:0 0 auto;font-size:11.5px;color:var(--accent);font-weight:700}
@@ -354,6 +358,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
 
   <!-- 明細 -->
   <section id="v-ledger" hidden>
+    <div class="seg vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
     <div class="top"><h1>明細</h1><div class="m"><button data-m="-1" aria-label="上個月">‹</button><b class="mLbl"></b><button data-m="1" aria-label="下個月">›</button></div></div>
     <div class="card"><div class="cal" id="cal"></div><div class="small muted" style="text-align:center;margin-top:8px">點日期看當天明細，再點一次同一天就能新增</div></div>
     <div class="card">
@@ -368,6 +373,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
 
   <!-- 統計 -->
   <section id="v-stats" hidden>
+    <div class="seg vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
     <div class="top"><h1>統計</h1><div class="m"><button data-m="-1" aria-label="上個月">‹</button><b class="mLbl"></b><button data-m="1" aria-label="下個月">›</button></div></div>
     <div class="card">
       <div class="stats3" style="grid-template-columns:1fr 1fr 1fr">
@@ -476,11 +482,10 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
 <nav class="tabs" id="appNav" hidden><div class="in">
   <a href="#home" data-v="home">首頁</a>
   <a href="#ledger" data-v="ledger">明細</a>
-  <a href="#stats" data-v="stats">統計</a>
+  <span class="fab"><button id="fab" aria-label="記一筆">＋</button></span>
   <a href="#assets" data-v="assets">資產</a>
   <a href="#me" data-v="me">我的</a>
 </div></nav>
-<button id="fab" class="fabfloat" aria-label="記一筆" hidden>＋</button>
 
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet" role="dialog" aria-label="記一筆">
@@ -1129,11 +1134,11 @@ function route() {
   const h = location.hash.slice(1);
   if (h.startsWith('add=')) { const k = h.slice(4); history.replaceState(null, '', '#home'); route(); openMealEntry(k); return; }
   view = ['home', 'ledger', 'stats', 'assets', 'me'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
-  $('#fab').hidden = ['me', 'admin'].includes(view) || !S.uid;
   for (const v of ['home', 'ledger', 'stats', 'assets', 'me', 'admin']) $('#v-' + v).hidden = v !== view;
   if (view === 'admin') renderAdmin();
   if (view === 'me') { renderMeal(); renderMe(); }
-  $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
+  $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === (view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view)));
+  $$('.vsw a').forEach(a => a.classList.toggle('on', a.dataset.sw === view));
   render(); window.scrollTo(0, 0);
 }
 
@@ -1888,7 +1893,6 @@ async function boot(sess) {
   if (S.uid) return;
   S.uid = sess.user.id; showAuth(false);
   S.me = { email: sess.user.email, name: (sess.user.user_metadata || {}).name || '' };
-  $('#fab').hidden = ['me', 'admin'].includes(view);
   HanCloud.auth.profile(S.uid).then(p => { S.isAdmin = !!p.is_admin; if (p.display_name) S.me.name = p.display_name; $('#adminRow').hidden = !S.isAdmin; if (view === 'me') renderMe(); if (location.hash === '#admin') route(); }).catch(() => {});
   const timer = setTimeout(() => status('資料還在讀取，網路可能不穩，請稍候。'), 10000);
   const db = HanCloud.openDB(S.uid, (st) => { const l = $('#syncLbl'); l.replaceChildren(el('span', { class: 'syncdot' + (st.online ? '' : ' off') }), st.online ? (st.pending ? `同步中（${st.pending}）` : '已同步') : `離線，${st.pending} 筆待上傳`); });
