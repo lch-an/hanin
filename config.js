@@ -6,4 +6,6 @@ window.HANIN_CONFIG = {
   anonKey: 'sb_publishable_QLJgzAwd_ARLJ-0WJb40XQ_5SLFG1Zt',
   // 免費版維持 false。之後儲值 Anthropic、部署保單辨識函式後再改成 true。
   ai: false,
+  // 三餐提醒推播用的公開金鑰（不是秘密）。對應的私鑰放在 Supabase 的 Edge Function Secrets。
+  vapidPublicKey: 'BIPjOKW7KClu12K7-_EAd2POEf2N8BBiuuKUqIh-4Nb5em2prF33C2NicdjMVUeUKr3ck6qqYADDsRICQA5RKuc',
 };

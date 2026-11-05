@@ -36,7 +36,7 @@ window.HanCloud = (() => {
     async session() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     onChange(cb) { if (sb) sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signUp(email, password, name) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name, privacy_version: '2026-11-05', privacy_agreed_at: new Date().toISOString() } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name, privacy_version: '2026-11-05b', privacy_agreed_at: new Date().toISOString() } } });
       if (error) throw new Error(errText(error));
       return { needConfirm: !data.session };
     },
@@ -210,7 +210,28 @@ window.HanCloud = (() => {
     async deleteCard(id) { const { error } = await sb.rpc('admin_delete_card', { card_id: id }); if (error) throw new Error(error.message); },
   };
 
+  // ---------- 三餐提醒（Web Push）----------
+  const b64ToBytes = (b64) => { const s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+  const push = {
+    supported() { return !!(cfg.vapidPublicKey && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window); },
+    standalone() { return !!(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)); },
+    async prefs(uid) { const { data } = await sb.from('reminder_prefs').select('enabled,times,skip_if_logged').eq('user_id', uid).maybeSingle(); return data; },
+    async savePrefs(uid, p) { const { error } = await sb.from('reminder_prefs').upsert({ user_id: uid, ...p, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }); if (error) throw new Error(errText(error)); },
+    async current() { if (!this.supported()) return null; const reg = await navigator.serviceWorker.getRegistration(); return reg ? reg.pushManager.getSubscription() : null; },
+    async enable(uid) {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('沒有允許通知。請到「設定 → 通知 → han in」打開');
+      const reg = await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.vapidPublicKey) });
+      const j = sub.toJSON();
+      const { error } = await sb.from('push_subs').upsert({ user_id: uid, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent.slice(0, 200) }, { onConflict: 'endpoint' });
+      if (error) throw new Error(errText(error));
+    },
+    async disable() { const sub = await this.current(); if (!sub) return; await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); },
+  };
+
   // AI 功能（保單截圖、回饋自動更新）要在 config.js 設 ai: true 才會出現
   const aiEnabled = !!cfg.ai;
-  return { sb, auth, openDB, loadCatalog, analyzePolicy, admin, isNative, aiEnabled };
+  return { sb, auth, openDB, loadCatalog, analyzePolicy, admin, isNative, aiEnabled, push };
 })();

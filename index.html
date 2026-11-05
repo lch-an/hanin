@@ -366,6 +366,7 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
       <div class="sb" id="adminRow" hidden style="margin-bottom:10px"><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">核准 AI 偵測到的信用卡回饋變動</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
       <div class="sb"><div><b style="font-size:14px">刪除帳號</b><div class="small muted">永久刪除帳號和所有雲端資料，無法復原</div></div><button class="x" id="delAccBtn" type="button" style="color:var(--exp)">刪除</button></div>
     </div>
+    <div class="card" id="mealCard"><h2>三餐提醒 <small>到時間問你吃什麼</small></h2><div id="mealBox"></div></div>
     <div class="card" id="dataCard"><h2>資料與提醒 <small>備份是額外的保險</small></h2>
       <div class="sb" style="margin-bottom:10px" id="remindRow"><div><b style="font-size:14px">扣款提醒</b><div class="small muted">信用卡扣款日前一天、訂閱扣款當天晚上 8 點提醒你</div></div><button class="btn ghost" id="remindBtn" type="button" style="white-space:nowrap">開啟</button></div>
       <div class="sb" style="margin-bottom:10px"><div><b style="font-size:14px">匯出備份</b><div class="small muted">下載一份 JSON 檔自己保存</div></div><button class="btn ghost" id="exportBtn" type="button" style="white-space:nowrap">匯出</button></div>
@@ -1053,9 +1054,11 @@ function render() {
 }
 function route() {
   const h = location.hash.slice(1);
+  if (h.startsWith('add=')) { const k = h.slice(4); history.replaceState(null, '', '#home'); route(); openMealEntry(k); return; }
   view = ['home', 'ledger', 'stats', 'assets'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
   for (const v of ['home', 'ledger', 'stats', 'assets', 'admin']) $('#v-' + v).hidden = v !== view;
   if (view === 'admin') renderAdmin();
+  if (view === 'stats') renderMeal();
   $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
   render(); window.scrollTo(0, 0);
 }
@@ -1441,6 +1444,63 @@ function openCardEditor(card) {
   m.hidden = false;
 }
 
+// ===== 三餐提醒 =====
+const MEAL_DEF = [['breakfast', '早餐', '08:00'], ['lunch', '午餐', '12:30'], ['dinner', '晚餐', '18:30']];
+const MEAL_NAME = Object.fromEntries(MEAL_DEF.map(([k, n]) => [k, n]));
+function openMealEntry(key) {
+  if (!S.db) { S.pendingAdd = key; return; }
+  openSheet(null); F.type = 'expense'; F.cat = '餐飲'; $('#fNote').value = MEAL_NAME[key] || ''; renderSheet();
+}
+async function scheduleNativeMeals(p) {
+  const N = Native.notif; if (!N) return;
+  const ids = [3001, 3002, 3003];
+  try { await N.cancel({ notifications: ids.map(id => ({ id })) }); } catch {}
+  if (!p.enabled) return;
+  const perm = await N.requestPermissions(); if (perm.display !== 'granted') throw new Error('請到「設定」允許通知');
+  const list = MEAL_DEF.map(([k, n], i) => { const t = (p.times || {})[k]; if (!t) return null; const [h, m] = t.split(':').map(Number); return { id: ids[i], title: `${n}吃什麼？`, body: `記一下${n}花了多少，一秒完成。`, schedule: { on: { hour: h, minute: m }, allowWhileIdle: true }, extra: { url: '#add=' + k } }; }).filter(Boolean);
+  if (list.length) await N.schedule({ notifications: list });
+}
+async function renderMeal() {
+  const box = $('#mealBox'); if (!box || !S.uid) return;
+  const P = HanCloud.push, ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const native = HanCloud.isNative && Native.notif;
+  if (!native && !P.supported()) {
+    const why = !(window.HANIN_CONFIG || {}).vapidPublicKey ? '推播還沒設定完成（需要管理員在 Supabase 完成三餐提醒的設定）。'
+      : ios && !P.standalone() ? 'iPhone 要先把網站「加入主畫面」，再從桌面的 han in 圖示打開，才能收到通知（iOS 16.4 以上）。'
+      : '這個瀏覽器不支援通知，請改用 Chrome、Edge，或 iPhone 加入主畫面後的 han in。';
+    put(box, el('div', { class: 'small muted', text: why })); return;
+  }
+  let prefs = null, sub = null;
+  try { [prefs, sub] = await Promise.all([P.prefs(S.uid), native ? Promise.resolve(true) : P.current()]); } catch {}
+  const p = { enabled: false, skip_if_logged: true, times: Object.fromEntries(MEAL_DEF.map(([k, , d]) => [k, d])), ...(prefs || {}) };
+  const on = !!(p.enabled && sub);
+  const rows = MEAL_DEF.map(([k, n, d]) => {
+    const chk = el('input', { type: 'checkbox' }); chk.checked = !!p.times[k];
+    const time = el('input', { type: 'time', class: 't', value: p.times[k] || d, style: 'max-width:130px' });
+    return { k, chk, time, node: el('label', { class: 'sb', style: 'gap:10px;margin:6px 0' }, el('span', { style: 'display:flex;gap:8px;align-items:center' }, chk, el('b', { style: 'font-size:14px', text: n })), time) };
+  });
+  const skip = el('input', { type: 'checkbox' }); skip.checked = p.skip_if_logged !== false;
+  const msg = el('div', { class: 'small', style: 'min-height:1.2em' });
+  const collect = (enabled) => ({ enabled, skip_if_logged: skip.checked, times: Object.fromEntries(rows.map(r => [r.k, r.chk.checked ? r.time.value : ''])) });
+  const persist = async () => { if (!on) return; try { const q = collect(true); await P.savePrefs(S.uid, q); if (native) await scheduleNativeMeals(q); msg.style.color = 'var(--inc)'; msg.textContent = '已儲存'; } catch (e) { msg.style.color = 'var(--exp)'; msg.textContent = e.message; } };
+  rows.forEach(r => { r.chk.addEventListener('change', persist); r.time.addEventListener('change', persist); });
+  skip.addEventListener('change', persist);
+  const btn = el('button', { class: on ? 'btn ghost' : 'btn', type: 'button', style: 'white-space:nowrap', text: on ? '關閉提醒' : '開啟提醒' });
+  btn.onclick = async () => {
+    btn.disabled = true; msg.style.color = ''; msg.textContent = on ? '' : '請在跳出的視窗按「允許」…';
+    try {
+      if (on) { await P.savePrefs(S.uid, collect(false)); if (native) await scheduleNativeMeals({ enabled: false }); else await P.disable(); toast('已關閉三餐提醒'); }
+      else { if (!native) await P.enable(S.uid); const q = collect(true); await P.savePrefs(S.uid, q); if (native) await scheduleNativeMeals(q); toast('三餐提醒已開啟'); }
+      renderMeal();
+    } catch (e) { msg.style.color = 'var(--exp)'; msg.textContent = e.message || '設定失敗'; btn.disabled = false; }
+  };
+  put(box,
+    el('div', { class: 'sb', style: 'margin-bottom:6px' }, el('div', { class: 'small muted', text: on ? '時間到會跳通知，點通知就直接開「記一筆」。' : '開啟後，到時間會跳出「早餐吃什麼？」之類的通知。' }), btn),
+    ...rows.map(r => r.node),
+    el('label', { class: 'small', style: 'display:flex;gap:8px;align-items:center;margin-top:6px' }, skip, '這一餐已經記過「餐飲」就不提醒'),
+    msg);
+}
+
 // ===== 登入流程 =====
 function setupAuthUI() {
   let mode = 'in';
@@ -1558,6 +1618,7 @@ async function start() {
   });
 
   setupAuthUI(); showInstallHint();
+  if (HanCloud.isNative && Native.notif && Native.notif.addListener) Native.notif.addListener('localNotificationActionPerformed', (e) => { const u = e && e.notification && e.notification.extra && e.notification.extra.url; if (u) location.hash = u.replace(/^#/, ''); });
   if (!HanCloud.auth.configured) { showAuth(true); $('#aMsg').className = 'amsg err'; $('#aMsg').textContent = '尚未設定雲端資料庫：請在 www/config.js 填入 Supabase 網址和金鑰。'; return; }
   HanCloud.auth.onChange((ev, sess) => {
     if (ev === 'PASSWORD_RECOVERY') $('#pwScreen').hidden = false;
@@ -1578,6 +1639,7 @@ async function boot(sess) {
   S.db = db;
   await db.ready; clearTimeout(timer);
   loadCards();
+  if (S.pendingAdd) { const k = S.pendingAdd; S.pendingAdd = null; setTimeout(() => openMealEntry(k), 300); }
   db.collection('accounts').onSnapshot(snap => {
     S.accounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！先到「資產」新增你的銀行帳戶和信用卡，就可以開始記帳。'); S.loaded = true;

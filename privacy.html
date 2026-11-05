@@ -17,12 +17,11 @@ th{background:var(--soft);font-weight:600;white-space:nowrap}
 li{margin:4px 0} a{color:var(--accent)}
 nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 @media (max-width:560px){nav ol{columns:1} table{font-size:13px} th,td{padding:6px}}
-.blank{background:#fff4d6;padding:0 4px;border-radius:4px}
 </style>
 </head>
 <body>
 <h1>han in 輸入記帳<br>隱私權政策與個人資料蒐集告知</h1>
-<div class="meta">版本：2026-11-05　｜　生效日：2026 年 11 月 5 日</div>
+<div class="meta">版本：2026-11-05b　｜　生效日：2026 年 11 月 5 日</div>
 
 <div class="summary">
 <b>重點摘要</b>（完整內容以下方條文為準）
@@ -60,7 +59,7 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 
 <h2 id="s1">一、適用範圍與蒐集者</h2>
 <p>本政策適用於「han in 輸入記帳」網頁版（https://lch-an.github.io/hanin/）、iOS App 版，以及兩者使用的雲端服務（以下合稱「本服務」）。</p>
-<p>依《個人資料保護法》（以下稱「個資法」）第 8 條，蒐集者名稱為：<b>han in 輸入記帳 營運者</b>（個人開發者 <span class="blank">（請填入營運者姓名）</span>），聯絡方式見第十九點。</p>
+<p>依《個人資料保護法》（以下稱「個資法」）第 8 條，蒐集者名稱為：<b>han in 輸入記帳 營運者</b>（個人開發者），聯絡方式見第十九點。</p>
 <p>你在註冊時勾選「我已閱讀並同意隱私權政策」，即表示你已了解本政策所列告知事項並同意依本政策蒐集、處理及利用你的個人資料。我們會一併記錄你同意的政策版本與時間。</p>
 
 <h2 id="s2">二、蒐集目的</h2>
@@ -70,7 +69,7 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 <tr><td>契約、類似契約或其他法律關係事務（069）</td><td>建立與管理你的帳號、提供登入與身分驗證、寄送驗證信與重設密碼信。</td></tr>
 <tr><td>資（通）訊服務（135）</td><td>保存你輸入的記帳、帳戶、預算、訂閱與保單資料，並在你的各裝置之間同步。</td></tr>
 <tr><td>資（通）訊與資料庫管理（136）</td><td>資料備份、系統維護、錯誤排除、防止濫用與資訊安全維護。</td></tr>
-<tr><td>消費者、客戶管理與服務（090）</td><td>依你綁定的信用卡卡別與消費內容試算回饋、顯示即將扣款、回覆你的詢問。</td></tr>
+<tr><td>消費者、客戶管理與服務（090）</td><td>依你綁定的信用卡卡別與消費內容試算回饋、顯示即將扣款、在你設定的時間發送三餐記帳提醒、回覆你的詢問。</td></tr>
 </table>
 <p>我們<b>不會</b>將你的資料用於行銷、廣告投放、信用評分、販售或提供給第三人做其他用途。若未來需要在上述目的以外利用，我們會事先取得你的同意。</p>
 
@@ -81,6 +80,7 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 <tr><td>財務細節（C081、C082）</td><td>你自行輸入的帳戶名稱與餘額、信用卡卡別、結帳日與扣款日、收支紀錄（金額、日期、分類、付款方式、備註）、預算、訂閱項目、股票與保單價值</td><td>你使用記帳與資產功能時</td></tr>
 <tr><td>保險資料（C088）</td><td>你自行輸入的保險公司、保單名稱、類型、要保人與被保險人姓名、保額、保費、繳費年期、已繳保費、保單價值</td><td>你使用保單功能時</td></tr>
 <tr><td>技術資料</td><td>登入時間、登入憑證（token）、資料最後更新時間；我們的服務商為了資安與維運，會留存連線 IP、瀏覽器類型等存取紀錄</td><td>使用本服務時自動產生</td></tr>
+<tr><td>提醒設定</td><td>你開啟三餐提醒時：提醒時間、是否開啟、各餐最後提醒日期，以及瀏覽器或手機產生的推播訂閱資訊（推播網址與加密金鑰，不含你的姓名或電話）</td><td>你在「統計」頁開啟三餐提醒時</td></tr>
 <tr><td>同意紀錄</td><td>你同意的隱私權政策版本與同意時間</td><td>註冊時</td></tr>
 </table>
 <p>備註、帳戶名稱等欄位是自由輸入的文字，<b>請不要在其中填寫卡號、帳號、密碼、身分證字號等敏感資料</b>。保單的要保人、被保險人若是你以外的人，請確認你已取得對方同意再輸入。</p>
@@ -111,7 +111,8 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 <tr><th>服務商</th><th>用途</th><th>處理的資料</th><th>所在地</th></tr>
 <tr><td>Supabase, Inc.</td><td>帳號登入、雲端資料庫、寄送驗證信與重設密碼信</td><td>帳號資料、你輸入的全部記帳與保單資料、技術資料</td><td>資料庫位於南韓首爾（Amazon Web Services ap-northeast-2）；公司位於美國</td></tr>
 <tr><td>GitHub, Inc.</td><td>網頁版的網站託管</td><td>只提供網頁檔案；GitHub 會留存訪客 IP 等連線紀錄。<b>你的記帳資料不會經過 GitHub</b></td><td>美國</td></tr>
-<tr><td>Apple Inc.</td><td>iOS App 下載與本機通知（僅 App 版）</td><td>依 Apple 隱私權政策處理；扣款提醒由你的手機自行排程，內容不會傳給我們</td><td>美國</td></tr>
+<tr><td>推播服務（Apple Push Notification service、Google Firebase Cloud Messaging、Mozilla 等，依你的裝置與瀏覽器而定）</td><td>傳送三餐提醒通知</td><td>只有加密後的通知內容（例如「午餐吃什麼？」），推播服務無法讀取內容，也不會收到你的記帳資料</td><td>美國等，依各服務商而定</td></tr>
+<tr><td>Apple Inc.</td><td>iOS App 下載與本機通知（僅 App 版）</td><td>依 Apple 隱私權政策處理；App 版的提醒由你的手機自行排程，內容不會傳給我們</td><td>美國</td></tr>
 </table>
 <p>上述跨境傳輸是提供本服務所必要。若主管機關依個資法第 21 條限制對特定國家或地區的國際傳輸，我們會配合調整。</p>
 
@@ -123,6 +124,7 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 <ul>
 <li>為了讓你離線也能記帳、不用每次重新登入，本服務會在你的瀏覽器或手機上保存：登入憑證、你的記帳資料暫存、尚未上傳的變更、信用卡回饋資料庫的快取，以及網頁版的離線檔案。</li>
 <li>這些資料只存在你的裝置上，用途僅限本服務運作，<b>不是廣告或追蹤用的 Cookie</b>。</li>
+<li>開啟三餐提醒時，瀏覽器會產生一組推播訂閱；在「統計」頁按「關閉提醒」會刪除這組訂閱，提醒設定則保留到你刪除帳號為止。</li>
 <li>按「登出」會清除登入憑證；刪除帳號會清除暫存。你也可以在瀏覽器設定中清除網站資料，清除後重新登入即可從雲端取回資料。</li>
 <li><b>在公用或別人的電腦上使用後，請務必登出。</b></li>
 </ul>
@@ -179,7 +181,7 @@ nav ol{columns:2;column-gap:28px;padding-left:1.4em;font-size:14px}
 
 <h2 id="s19">十九、準據法與聯絡方式</h2>
 <p>本政策依中華民國法律解釋與適用。對本政策或你的個人資料有任何疑問、請求或申訴，請聯絡：</p>
-<p>han in 輸入記帳 營運者　<span class="blank">（請填入營運者姓名）</span><br>Email：<span class="blank">（請填入你的聯絡信箱）</span></p>
+<p>han in 輸入記帳 營運者<br>Email：<a href="mailto:hanbouger@gmail.com">hanbouger@gmail.com</a></p>
 <p>若你認為我們的處理不符合個資法規定，也可以向個人資料保護主管機關提出申訴。</p>
 </body>
 </html>
