@@ -261,6 +261,11 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .diff{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}
 .diff th,.diff td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
 .diff .add{color:var(--inc)} .diff .del{color:var(--exp);text-decoration:line-through}
+.steps{display:flex;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
+.steps .st{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.steps .st.on{background:var(--accent);color:#fff}
+.steps .st.done{color:var(--accent)}
+.grid3{display:grid;grid-template-columns:1.4fr 1fr .8fr;gap:8px}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--inc);margin-right:6px}
 .syncdot.off{background:var(--warn)}
 </style>
@@ -373,9 +378,9 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
       <div class="sb"><div><b style="font-size:14px">匯入備份</b><div class="small muted">會用備份檔的內容取代帳號裡目前所有資料</div></div><label class="btn ghost" style="white-space:nowrap;cursor:pointer">選擇檔案<input type="file" id="importFile" accept=".json,application/json" hidden></label></div>
       <div id="importConfirm" class="edit" hidden></div>
     </div>
-    <div class="card" id="budgetCard"><h2>每月生活費預算 <small>數字都可以自己改</small></h2>
+    <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">每月生活費預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
       <div class="bcalc">
-        <label>每月實領薪水<input class="t num" id="bSalary" inputmode="numeric"></label>
+        <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 40029"><span class="small" id="bIncNote"></span></label>
         <label>先存起來的比例（%）<input class="t num" id="bSave" inputmode="numeric"></label>
         <label>其他固定支出（訂閱以外）<input class="t num" id="bFixed" inputmode="numeric" placeholder="例如手機費、自己繳的保費"></label>
       </div>
@@ -476,7 +481,7 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 (() => {
 'use strict';
 const CATS = {
-  expense: [['餐飲','餐','#e07a3f'],['飲料','飲','#c9874a'],['交通','交','#3f7fb3'],['日用品','日','#6f8f3a'],['購物','購','#b25a8c'],['唱片行','唱','#8a63c2'],['醫療','醫','#c0504d'],['通訊','通','#3a9a9a'],['學習','學','#5a6fc0'],['人情','人','#c49a2c'],['旅遊','旅','#2f8f6a'],['美容','美','#d0708f'],['運動','運','#4f9e6b'],['訂閱','訂','#6a5acd'],['房租','房','#8a7a66'],['保費','保','#8a7a66'],['其他','其','#8a8580']],
+  expense: [['餐飲','餐','#e07a3f'],['飲料','飲','#c9874a'],['交通','交','#3f7fb3'],['日用品','日','#6f8f3a'],['購物','購','#b25a8c'],['唱片行','唱','#8a63c2'],['醫療','醫','#c0504d'],['通訊','通','#3a9a9a'],['學習','學','#5a6fc0'],['禮金紅包','禮','#c49a2c'],['旅遊','旅','#2f8f6a'],['美容','美','#d0708f'],['運動','運','#4f9e6b'],['訂閱','訂','#6a5acd'],['房租','房','#8a7a66'],['保費','保','#8a7a66'],['其他','其','#8a8580']],
   income: [['薪水','薪','#2f8052'],['租金補貼','租','#3a8f6a'],['生存金','生','#4a8a7a'],['股利','股','#3f7fb3'],['獎金','獎','#c49a2c'],['二手出售','二','#4a8a6a'],['退款','退','#7a8a5a'],['其他收入','其','#8a8580']]
 };
 const CAT = {}; for (const t in CATS) for (const [n, i, c] of CATS[t]) CAT[n] = { i, c };
@@ -514,6 +519,8 @@ const shiftMonth = (m, k) => { let [y, mo] = m.split('-').map(Number); mo += k; 
 const daysIn = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo, 0).getDate(); };
 const WD = '日一二三四五六';
 const toast = (t) => { const x = $('#toast'); x.textContent = t; x.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => x.classList.remove('show'), 1800); };
+const CAT_ALIAS = { '人情': '禮金紅包' };
+const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
@@ -1017,14 +1024,15 @@ function subEditor(x, i, list) {
     el('div', { class: 'sb' }, el('span', { class: 'small muted', text: '改價格、改方案都在這裡' }), el('div', { class: 'flex' }, el('button', { class: 'btn ghost', type: 'button', text: '取消', onclick: () => { S.subEdit = null; renderSubs(); } }), save)));
 }
 function suggestBudget() {
-  const salary = numIn('#bSalary'), rate = Math.min(100, Math.max(0, numIn('#bSave'))), fixed = numIn('#bFixed');
+  const salary0 = numIn('#bSalary'), rate = Math.min(100, Math.max(0, numIn('#bSave'))), fixed = numIn('#bFixed');
+  const other = (S.settings.incomes || []).reduce((a, x) => a + (Number(x.amount) || 0), 0), salary = salary0 + other;
   const save = Math.round(salary * rate / 100), subs = subsMonthly();
-  return { salary, rate, fixed, save, subs, living: Math.max(0, salary - save - subs - fixed) };
+  return { salary, salary0, other, rate, fixed, save, subs, living: Math.max(0, salary - save - subs - fixed) };
 }
 function updateFormula() {
   const g = suggestBudget();
   $('#bFormula').replaceChildren(
-    el('div', { class: 'fl' }, el('span', { text: '實領薪水' }), el('b', { class: 'num', text: money(g.salary) })),
+    el('div', { class: 'fl' }, el('span', { text: g.other ? `實領薪水＋其他固定收入` : '實領薪水' }), el('b', { class: 'num', text: money(g.salary) })),
     el('div', { class: 'fl' }, el('span', { text: `− 先存起來（${g.rate}%）` }), el('b', { class: 'num inc', text: '−' + fmt.format(g.save) })),
     el('div', { class: 'fl' }, el('span', { text: `− 每月訂閱（${(S.settings.subs || []).length} 個）` }), el('b', { class: 'num', text: '−' + fmt.format(g.subs) })),
     el('div', { class: 'fl' }, el('span', { text: '− 其他固定支出' }), el('b', { class: 'num', text: '−' + fmt.format(g.fixed) })),
@@ -1037,6 +1045,8 @@ function renderBudgetCard() {
     $('#bSalary').value = st.salary ?? 0; $('#bSave').value = st.saveRate ?? 20; $('#bFixed').value = st.fixed ?? 0; $('#setBudget').value = st.budget ?? 20000;
   }
   renderSubs();
+  const inc = st.incomes || [];
+  $('#bIncNote').textContent = inc.length ? `另有固定收入：${inc.map(x => `${x.name} ${fmt.format(x.amount)}`).join('、')}（會一起算進去）` : (st.payday ? `每月 ${st.payday} 號入帳` : '');
   updateFormula();
   const nl = nonLiving();
   $('#nonLiving').replaceChildren(...CATS.expense.map(([n, i]) => el('button', { type: 'button', class: 'chip' + (nl.has(n) ? ' on' : ''), text: `${i} ${n}`, onclick: async () => {
@@ -1069,7 +1079,7 @@ function subscribeMonth() {
   const from = S.month + '-01', to = shiftMonth(S.month, 1) + '-01';
   S.txMonth = new Map();
   S.unsubMonth = S.db.collection('txns').where('date', '>=', from).where('date', '<', to).onSnapshot(snap => {
-    S.txMonth = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }])); render();
+    S.txMonth = new Map(snap.docs.map(d => [d.id, normTx({ id: d.id, ...d.data() })])); render();
   }, () => status('明細暫時讀不到，請稍後重新整理。'));
 }
 function subscribeRecent() {
@@ -1079,7 +1089,7 @@ function subscribeRecent() {
   S.recentFrom = from;
   if (S.unsubRecent) S.unsubRecent();
   S.unsubRecent = S.db.collection('txns').where('createdAt', '>', from).onSnapshot(snap => {
-    S.txRecent = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }])); render();
+    S.txRecent = new Map(snap.docs.map(d => [d.id, normTx({ id: d.id, ...d.data() })])); render();
   }, () => status('餘額暫時算不出來，請稍後重新整理。'));
 }
 
@@ -1501,6 +1511,128 @@ async function renderMeal() {
     msg);
 }
 
+// ===== 開始設定（一步一步輸入收入、固定支出、帳戶、預算，每一步都可以略過）=====
+function openSetup(auto) {
+  const m = $('#pModal'), box = $('#pBox');
+  const st = S.settings || {};
+  const W = {
+    step: 0,
+    salary: st.salary || '', payday: st.payday || '', incomes: (st.incomes || []).map(x => ({ ...x })),
+    fixedItems: (st.fixedItems || (st.fixed ? [{ name: '其他固定支出', amount: st.fixed, day: '' }] : [])).map(x => ({ ...x })),
+    subs: (st.subs || []).map(x => ({ ...x })),
+    banks: [], cards: [], saveRate: st.saveRate ?? 20,
+  };
+  const STEPS = ['收入', '固定支出', '帳戶', '預算'];
+  const close = async (done) => {
+    m.hidden = true; box.replaceChildren();
+    if (auto && !done) { try { await S.db.doc('settings/main').set({ ...S.settings, setupDone: true }); } catch {} }
+  };
+  m.onclick = null;
+  const n = (v) => { const x = Number(String(v ?? '').replace(/,/g, '')); return Number.isFinite(x) ? x : 0; };
+  const L = (t, e, hint) => el('label', { class: 'small muted', style: 'display:flex;flex-direction:column;gap:3px' }, t, e, hint ? el('span', { class: 'small', style: 'opacity:.8', text: hint }) : null);
+  const inp = (obj, key, ph, numeric, attrs = {}) => { const i = el('input', { class: 't' + (numeric ? ' num' : ''), placeholder: ph, inputmode: numeric ? 'decimal' : 'text', value: obj[key] ?? '', ...attrs }); i.addEventListener('input', () => { obj[key] = i.value; if (W.onInput) W.onInput(); }); return i; };
+  const rowList = (arr, make, addLabel, blank) => {
+    const wrap = el('div');
+    const draw = () => put(wrap, ...arr.map((x, i) => el('div', { class: 'edit', style: 'margin-bottom:6px;position:relative' }, make(x),
+      el('div', { class: 'flex', style: 'justify-content:flex-end' }, el('button', { class: 'x', type: 'button', text: '刪除', onclick: () => { arr.splice(i, 1); draw(); if (W.onInput) W.onInput(); } })))),
+      el('button', { class: 'btn ghost', type: 'button', text: '＋ ' + addLabel, onclick: () => { arr.push({ ...blank }); draw(); } }));
+    draw(); return wrap;
+  };
+  const chipAdd = (arr, names, blank, redraw) => el('div', { class: 'chips', style: 'margin:6px 0 10px' }, ...names.map(nm => el('button', { type: 'button', class: 'chip', text: '＋' + nm, onclick: () => { arr.push({ ...blank, name: nm }); redraw(); } })));
+
+  const pages = [
+    () => { // 收入
+      const inc = rowList(W.incomes, x => el('div', { class: 'grid2' }, L('名稱', inp(x, 'name', '例如 租屋補助')), L('每月金額', inp(x, 'amount', '金額', true))), '其他固定收入', { name: '', amount: '' });
+      return [
+        el('div', { class: 'pnote' }, el('b', { text: '先告訴我你每個月有多少錢進來。' }), el('div', { class: 'small', text: '只填固定會有的收入就好；獎金、年終這種不固定的先不要算。' })),
+        el('div', { class: 'edit' },
+          el('div', { class: 'grid2' },
+            L('每月實領薪水', inp(W, 'salary', '例如 40029', true), '扣完勞健保、實際匯進戶頭的金額'),
+            L('發薪日', inp(W, 'payday', '例如 10', true), '每月幾號入帳'))),
+        el('div', { class: 'lbl', style: 'margin-top:10px', text: '其他固定收入（補助、房租收入、兼職⋯）' }), inc];
+    },
+    () => { // 固定支出
+      const fWrap = el('div'), sWrap = el('div');
+      const fl = () => put(fWrap, rowList(W.fixedItems, x => el('div', { class: 'grid3' }, L('名稱', inp(x, 'name', '例如 房租')), L('每月金額', inp(x, 'amount', '金額', true)), L('扣款日', inp(x, 'day', '可空', true))), '固定支出', { name: '', amount: '', day: '' }));
+      const sl = () => put(sWrap, rowList(W.subs, x => {
+        const cur = el('select', { class: 't' }, el('option', { value: 'TWD', text: '台幣' }), el('option', { value: 'USD', text: '美元' })); cur.value = x.currency || 'TWD'; cur.onchange = () => { x.currency = cur.value; };
+        return el('div', {}, el('div', { class: 'grid2' }, L('名稱', inp(x, 'name', '例如 Netflix')), L('扣款日', inp(x, 'day', '1–31', true))), el('div', { class: 'grid2' }, L('每月金額', inp(x, 'amount', '金額', true)), L('幣別', cur)));
+      }, '訂閱', { name: '', amount: '', currency: 'TWD', day: '' }));
+      fl(); sl();
+      return [
+        el('div', { class: 'pnote' }, el('b', { text: '每個月一定要付、金額差不多的錢。' }), el('div', { class: 'small', text: '這些會先從薪水扣掉，剩下的才是你可以自由花的生活費。家人幫你付的就不用填。' })),
+        el('div', { class: 'lbl', text: '固定支出' }), chipAdd(W.fixedItems, ['房租', '手機費', '保費', '孝親費', '貸款', '交通月票'], { amount: '', day: '' }, fl), fWrap,
+        el('div', { class: 'lbl', style: 'margin-top:12px', text: '訂閱（影音、會員、軟體）' }), chipAdd(W.subs, ['Netflix', 'Spotify', 'YouTube Premium', 'iCloud+', '蝦皮 VIP', '酷澎 WOW'], { amount: '', currency: 'TWD', day: '' }, sl), sWrap];
+    },
+    () => { // 帳戶
+      const bWrap = rowList(W.banks, x => el('div', { class: 'grid2' }, L('名稱', inp(x, 'name', '例如 國泰 薪轉')), L('目前餘額', inp(x, 'base', '金額', true))), '銀行帳戶／現金', { name: '', base: '' });
+      const cWrap = rowList(W.cards, x => el('div', {}, el('div', { class: 'grid2' }, L('卡片名稱', inp(x, 'name', '例如 國泰 CUBE')), L('目前欠款', inp(x, 'base', '還沒繳的金額', true))), el('div', { class: 'grid2' }, L('結帳日', inp(x, 'closeDay', '例如 25', true)), L('自動扣繳日', inp(x, 'dueDay', '例如 9', true)))), '信用卡', { name: '', base: '', closeDay: '', dueDay: '' });
+      const has = S.accounts.length;
+      return [
+        el('div', { class: 'pnote' }, el('b', { text: '你的錢放在哪裡、刷哪幾張卡？' }), el('div', { class: 'small', text: has ? `你已經有 ${S.accounts.length} 個帳戶，這裡新增的會再加上去；不用新增就直接按下一步。` : '先把常用的填上，之後到「資產」頁都還能新增或修改。股票、保險、土地也是在「資產」頁新增。' })),
+        el('div', { class: 'lbl', text: '銀行帳戶／現金' }), bWrap,
+        el('div', { class: 'lbl', style: 'margin-top:12px', text: '信用卡' }), cWrap];
+    },
+    () => { // 預算
+      const out = el('div', { class: 'formula' });
+      const rate = el('input', { class: 't num', inputmode: 'numeric', value: W.saveRate, style: 'max-width:90px' });
+      const calc = () => {
+        W.saveRate = Math.min(100, Math.max(0, n(rate.value)));
+        const salary = n(W.salary), other = W.incomes.reduce((a, x) => a + n(x.amount), 0), income = salary + other;
+        const fixed = W.fixedItems.reduce((a, x) => a + n(x.amount), 0);
+        const subs = W.subs.reduce((a, x) => a + n(x.amount) * (x.currency === 'USD' ? (Number(S.settings.usdRate) || 32.6) : 1), 0);
+        const save = Math.round(income * W.saveRate / 100), living = Math.max(0, Math.round(income - save - fixed - subs));
+        W.budget = living;
+        put(out,
+          el('div', { class: 'fl' }, el('span', { text: '每月收入' }), el('b', { class: 'num', text: money(income) })),
+          other ? el('div', { class: 'fl sub' }, el('span', { text: `（薪水 ${fmt.format(salary)}＋其他 ${fmt.format(other)}）` }), el('span')) : null,
+          el('div', { class: 'fl' }, el('span', { text: `− 先存起來（${W.saveRate}%）` }), el('b', { class: 'num inc', text: '−' + fmt.format(save) })),
+          el('div', { class: 'fl' }, el('span', { text: `− 固定支出（${W.fixedItems.length} 項）` }), el('b', { class: 'num', text: '−' + fmt.format(fixed) })),
+          el('div', { class: 'fl' }, el('span', { text: `− 訂閱（${W.subs.length} 個）` }), el('b', { class: 'num', text: '−' + fmt.format(Math.round(subs)) })),
+          el('div', { class: 'fl tot' }, el('span', { text: '＝ 每月生活費預算' }), el('b', { class: 'num', text: money(living) })),
+          el('div', { class: 'fl sub' }, el('span', { text: '平均每天可以花' }), el('span', { class: 'num', text: money(living / 30) })));
+      };
+      rate.addEventListener('input', calc); calc();
+      return [
+        el('div', { class: 'pnote' }, el('b', { text: '算出你每個月可以花多少。' }), el('div', { class: 'small', text: '先存起來的比例建議 10%～30%。這個數字就是首頁圓圈裡的預算，之後在「統計」頁隨時可以改。' })),
+        el('div', { class: 'edit' }, el('div', { class: 'sb' }, el('b', { style: 'font-size:14px', text: '每月先存幾 %' }), el('span', { class: 'flex', style: 'gap:6px;align-items:center' }, rate, '%'))),
+        out];
+    },
+  ];
+
+  const finish = async () => {
+    const clean = (s) => String(s || '').trim().slice(0, 30);
+    const fixedItems = W.fixedItems.filter(x => clean(x.name) && n(x.amount) > 0).map(x => ({ name: clean(x.name), amount: n(x.amount), day: n(x.day) >= 1 && n(x.day) <= 31 ? Math.round(n(x.day)) : null }));
+    const incomes = W.incomes.filter(x => clean(x.name) && n(x.amount) > 0).map(x => ({ name: clean(x.name), amount: n(x.amount) }));
+    const subs = W.subs.filter(x => clean(x.name) && n(x.amount) > 0).map(x => ({ ...x, name: clean(x.name), amount: n(x.amount), currency: x.currency || 'TWD', day: n(x.day) >= 1 && n(x.day) <= 31 ? Math.round(n(x.day)) : null }));
+    const next = { ...S.settings, salary: n(W.salary), payday: n(W.payday) >= 1 && n(W.payday) <= 31 ? Math.round(n(W.payday)) : null, incomes, fixedItems, fixed: fixedItems.reduce((a, x) => a + x.amount, 0), subs, saveRate: W.saveRate, setupDone: true };
+    if (W.budget > 0) next.budget = W.budget;
+    try {
+      await S.db.doc('settings/main').set(next);
+      let order = Date.now();
+      for (const b of W.banks.filter(x => clean(x.name))) await S.db.collection('accounts').add({ name: clean(b.name), type: 'bank', base: n(b.base), baseAt: Date.now(), currency: 'TWD', inNW: true, order: order++, wallets: [] });
+      for (const c of W.cards.filter(x => clean(x.name))) await S.db.collection('accounts').add({ name: clean(c.name), type: 'card', base: n(c.base), baseAt: Date.now(), currency: 'TWD', inNW: true, order: order++, wallets: [], closeDay: n(c.closeDay) >= 1 && n(c.closeDay) <= 31 ? Math.round(n(c.closeDay)) : null, dueDay: n(c.dueDay) >= 1 && n(c.dueDay) <= 31 ? Math.round(n(c.dueDay)) : null });
+      toast('設定完成！'); close(true); location.hash = '#home'; render();
+    } catch (e) { toast('儲存失敗，請再試一次'); }
+  };
+
+  const draw = () => {
+    W.onInput = null;
+    const body = pages[W.step]();
+    const last = W.step === STEPS.length - 1;
+    put(box,
+      el('div', { class: 'sb' }, el('b', { text: '開始設定' }), el('button', { class: 'x', type: 'button', text: '之後再說', onclick: () => close(false) })),
+      el('div', { class: 'steps' }, ...STEPS.map((s, i) => el('span', { class: 'st' + (i === W.step ? ' on' : i < W.step ? ' done' : ''), text: `${i + 1} ${s}` }))),
+      ...body,
+      el('div', { class: 'sb', style: 'margin-top:14px;gap:8px' },
+        W.step ? el('button', { class: 'btn ghost', type: 'button', text: '上一步', onclick: () => { W.step--; draw(); box.scrollTop = 0; } }) : el('span'),
+        el('div', { class: 'flex', style: 'gap:8px' },
+          !last ? el('button', { class: 'x', type: 'button', text: '略過這步', onclick: () => { W.step++; draw(); box.scrollTop = 0; } }) : null,
+          el('button', { class: 'btn', type: 'button', text: last ? '完成' : '下一步', onclick: () => { if (last) finish(); else { W.step++; draw(); box.scrollTop = 0; } } }))));
+  };
+  draw(); m.hidden = false;
+}
+
 // ===== 登入流程 =====
 function setupAuthUI() {
   let mode = 'in';
@@ -1549,6 +1681,7 @@ function setupAuthUI() {
   if (!HanCloud.isNative) { $('#remindRow').replaceChildren(el('div', {}, el('b', { style: 'font-size:14px', text: '扣款提醒' }), el('div', { class: 'small muted', text: '網頁版沒有推播通知，請看首頁的「即將扣款」。手機 App 版才有通知。' }))); }
   $('#cmBank').addEventListener('change', renderCardList);
   $('#cmAdd').addEventListener('click', () => openCardEditor(null));
+  $('#setupBtn').addEventListener('click', () => openSetup(false));
 }
 function showInstallHint() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
@@ -1642,7 +1775,8 @@ async function boot(sess) {
   if (S.pendingAdd) { const k = S.pendingAdd; S.pendingAdd = null; setTimeout(() => openMealEntry(k), 300); }
   db.collection('accounts').onSnapshot(snap => {
     S.accounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！先到「資產」新增你的銀行帳戶和信用卡，就可以開始記帳。'); S.loaded = true;
+    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！到「統計」頁按「一步一步設定」，或直接到「資產」新增帳戶。'); S.loaded = true;
+    if (!S.setupChecked) { S.setupChecked = true; setTimeout(() => { if (!S.accounts.length && !S.settings.setupDone && $('#pModal').hidden) openSetup(true); }, 700); }
     if (!lastExpenseAcc) { const c = sorted(S.accounts).find(a => typeOf(a) === 'card'); lastExpenseAcc = c ? c.id : null; }
     subscribeRecent(); render();
     if (S.settings.remind) scheduleReminders(true);
