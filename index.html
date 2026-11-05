@@ -261,6 +261,8 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .diff{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}
 .diff th,.diff td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
 .diff .add{color:var(--inc)} .diff .del{color:var(--exp);text-decoration:line-through}
+body.lock{position:fixed;left:0;right:0;overflow:hidden}
+.modal .box{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .fabfloat{position:fixed;right:18px;bottom:calc(66px + env(safe-area-inset-bottom));width:58px;height:58px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:30px;line-height:1;box-shadow:0 6px 18px rgba(45,106,88,.35);cursor:pointer;z-index:11}
 .prof{display:flex;align-items:center;gap:12px}
 .avatar{width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;flex:none}
@@ -401,17 +403,17 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
     </div>
     <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
       <div class="bcalc">
-        <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 40029"><span class="small" id="bIncNote"></span></label>
+        <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 29500（2026 年基本工資）"><span class="small" id="bIncNote"></span></label>
         <label>先存起來的比例（%）<input class="t num" id="bSave" inputmode="numeric"></label>
         <label>其他固定支出（訂閱以外）<input class="t num" id="bFixed" inputmode="numeric" placeholder="例如手機費、自己繳的保費"></label>
       </div>
       <div class="subs">
-        <div class="sb"><b style="font-size:14px">每月訂閱</b><span class="small muted">美元匯率 <input class="t num" id="usdRate" inputmode="decimal" style="width:5.5em;padding:4px 6px;display:inline-block"></span></div>
+        <div class="sb"><b style="font-size:14px">每月訂閱</b><span class="small muted" id="fxLbl"></span></div>
         <ul class="list" id="subList"></ul>
         <div class="subadd">
           <input class="t" id="subName" placeholder="名稱，例如 Spotify">
           <input class="t num" id="subAmt" inputmode="decimal" placeholder="金額">
-          <select class="t" id="subCur"><option value="TWD">台幣</option><option value="USD">美元</option></select>
+          <select class="t" id="subCur"><option value="TWD">台幣</option><option value="USD">美元</option><option value="JPY">日圓</option><option value="EUR">歐元</option><option value="HKD">港幣</option><option value="CNY">人民幣</option><option value="GBP">英鎊</option><option value="KRW">韓元</option><option value="SGD">新加坡幣</option><option value="AUD">澳幣</option></select>
           <input class="t num" id="subDay" inputmode="numeric" placeholder="扣款日">
           <button class="btn ghost" id="subAddBtn" type="button">＋ 加入</button>
         </div>
@@ -1016,13 +1018,36 @@ function renderAssets() {
 }
 
 const numIn = (id) => { const v = Number(String($(id).value).replace(/[,\s]/g, '')); return Number.isFinite(v) ? v : 0; };
-const subTWD = (x) => Math.round(Number(x.amount) * (x.currency === 'USD' ? (Number(S.settings.usdRate) || 32.6) : 1));
+// ===== 匯率：每天自動更新（ExchangeRate-API），失敗就用上次的或預設值 =====
+const CURS = [['TWD', '台幣'], ['USD', '美元'], ['JPY', '日圓'], ['EUR', '歐元'], ['HKD', '港幣'], ['CNY', '人民幣'], ['GBP', '英鎊'], ['KRW', '韓元'], ['SGD', '新加坡幣'], ['AUD', '澳幣']];
+const CUR_NAME = Object.fromEntries(CURS);
+const FX_DEFAULT = { TWD: 1, USD: 32.6, JPY: 0.21, EUR: 35.5, HKD: 4.18, CNY: 4.5, GBP: 41.5, KRW: 0.023, SGD: 25, AUD: 21 };
+const FX = (() => { try { return JSON.parse(localStorage.getItem('fx-cache') || 'null') || { rates: {}, date: null }; } catch { return { rates: {}, date: null }; } })();
+function fxRate(cur) {
+  if (!cur || cur === 'TWD') return 1;
+  if (cur === 'USD' && Number(S.settings.usdRate) > 0 && S.settings.usdManual) return Number(S.settings.usdRate);
+  return Number(FX.rates[cur]) || (cur === 'USD' ? Number(S.settings.usdRate) || FX_DEFAULT.USD : FX_DEFAULT[cur] || 1);
+}
+async function refreshFx() {
+  const today = todayStr(); if (FX.date === today) return;
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/TWD'); if (!r.ok) return;
+    const j = await r.json(); if (j.result !== 'success') return;
+    const rates = {}; for (const [c] of CURS) if (c !== 'TWD' && j.rates[c] > 0) rates[c] = Math.round(1 / j.rates[c] * 10000) / 10000;
+    FX.rates = rates; FX.date = today; try { localStorage.setItem('fx-cache', JSON.stringify(FX)); } catch {}
+    render();
+  } catch {}
+}
+const curSelect = (val) => { const sel = el('select', { class: 't' }, ...CURS.map(([v, l]) => el('option', { value: v, text: l }))); sel.value = val || 'TWD'; return sel; };
+const fmtCur = (cur, amt) => `${CUR_NAME[cur] || cur} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(amt)}`;
+const subTWD = (x) => Math.round(Number(x.amount) * fxRate(x.currency || 'TWD'));
 const subsMonthly = () => (S.settings.subs || []).reduce((a, x) => a + subTWD(x), 0);
 async function saveSubs(list, msg) { try { await S.db.doc('settings/main').set({ ...S.settings, subs: list }); if (msg) toast(msg); } catch { toast('儲存失敗'); } }
 function renderSubs() {
   const list = S.settings.subs || [];
   if (document.activeElement && document.activeElement.matches('#subList .edit input, #subList .edit select')) return;
-  if (document.activeElement !== $('#usdRate')) $('#usdRate').value = S.settings.usdRate ?? 32.6;
+  const used = [...new Set((S.settings.subs || []).map(x => x.currency).filter(c => c && c !== 'TWD'))];
+  $('#fxLbl').textContent = used.length ? '匯率 ' + used.map(c => `${CUR_NAME[c] || c} ${fxRate(c)}`).join('、') + (FX.date ? '（每天自動更新）' : '（預設值）') : '';
   const t0 = todayStr(), m0 = monthOf(t0);
   $('#subList').replaceChildren(...(list.length ? list.map((x, i) => {
     const paid = allTx().some(t => t.type === 'expense' && monthOf(t.date) === m0 && t.category === '訂閱' && (t.note || '') === x.name);
@@ -1031,7 +1056,7 @@ function renderSubs() {
     del.addEventListener('click', () => { if (!del.classList.contains('sure')) { del.classList.add('sure'); del.textContent = '確定？'; return; } saveSubs(list.filter((_, k) => k !== i), '已移除 ' + x.name); });
     const row = el('li', { style: 'cursor:default;flex-wrap:wrap' },
       
-      el('div', { class: 'grow' }, el('div', { class: 'a', text: x.name }), el('div', { class: 'b', text: (x.currency === 'USD' ? `USD ${x.amount} ≈ ` : '') + `$${fmt.format(subTWD(x))}／月` + (x.day ? `・每月 ${x.day} 日` : '') + (x.account && accById(x.account) ? `・${x.via ? x.via + '・' : ''}${accName(x.account)}` : '') + (paid ? '・本月已記' : '') })),
+      el('div', { class: 'grow' }, el('div', { class: 'a', text: x.name }), el('div', { class: 'b', text: (x.currency && x.currency !== 'TWD' ? `${fmtCur(x.currency, x.amount)} ≈ ` : '') + `$${fmt.format(subTWD(x))}／月` + (x.day ? `・每月 ${x.day} 日` : '') + (x.account && accById(x.account) ? `・${x.via ? x.via + '・' : ''}${accName(x.account)}` : '') + (paid ? '・本月已記' : '') })),
       el('button', { class: 'btn ghost', type: 'button', style: 'padding:5px 9px;font-size:12.5px', text: paid ? '再記一筆' : '記一筆', onclick: () => {
         openSheet(null, x.day && monthOf(t0) === m0 ? `${m0}-${pad(Math.min(x.day, daysIn(m0)))}` : t0);
         F.cat = '訂閱'; F.expr = String(subTWD(x)); $('#fNote').value = x.name; if (x.account && accById(x.account)) { F.acc = x.account; F.via = x.via || ''; F.accTouched = true; } renderSheet(); } }),
@@ -1043,7 +1068,7 @@ function renderSubs() {
 function subEditor(x, i, list) {
   const name = el('input', { class: 't', value: x.name });
   const amt = el('input', { class: 't num', inputmode: 'decimal', value: x.amount });
-  const cur = el('select', { class: 't' }, el('option', { value: 'TWD', text: '台幣' }), el('option', { value: 'USD', text: '美元' })); cur.value = x.currency || 'TWD';
+  const cur = curSelect(x.currency);
   const day = el('input', { class: 't num', inputmode: 'numeric', value: x.day || '', placeholder: '1–31' });
   const acc = el('select', { class: 't' }, el('option', { value: '', text: '（不指定）' }), ...payables().map(a => el('option', { value: a.id, text: a.name }))); acc.value = x.account && accById(x.account) ? x.account : '';
   const via = el('select', { class: 't' }, ...VIAS.map(([v, l]) => el('option', { value: v, text: l }))); via.value = x.via || '';
@@ -1343,7 +1368,7 @@ async function savePolicy(r, name, value, holderIsMe) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const cur = r.currency || 'TWD', usd = cur === 'USD';
   await S.db.doc('policies/' + id).set({ ...r, savedAt: Date.now() });
-  await S.db.collection('accounts').add({ name: String(name || '').trim().slice(0, 40) || '保單', type: 'insurance', base: Number(value) || 0, baseAt: Date.now(), currency: usd ? 'USD' : 'TWD', fx: usd ? (Number(S.settings.usdRate) || 32.6) : null, inNW: !!holderIsMe, note: [r.holder ? '要保人 ' + r.holder : '', r.policy_type || ''].filter(Boolean).join('・').slice(0, 60), policyId: id, order: Date.now(), wallets: [] });
+  await S.db.collection('accounts').add({ name: String(name || '').trim().slice(0, 40) || '保單', type: 'insurance', base: Number(value) || 0, baseAt: Date.now(), currency: usd ? 'USD' : 'TWD', fx: usd ? fxRate('USD') : null, inNW: !!holderIsMe, note: [r.holder ? '要保人 ' + r.holder : '', r.policy_type || ''].filter(Boolean).join('・').slice(0, 60), policyId: id, order: Date.now(), wallets: [] });
 }
 
 // ===== 保單：手動輸入（免費版）=====
@@ -1586,7 +1611,7 @@ function openSetup(auto) {
         el('div', { class: 'pnote' }, el('b', { text: '先告訴我你每個月有多少錢進來。' }), el('div', { class: 'small', text: '只填固定會有的收入就好；獎金、年終這種不固定的先不要算。' })),
         el('div', { class: 'edit' },
           el('div', { class: 'grid2' },
-            L('每月實領薪水', inp(W, 'salary', '例如 40029', true), '扣完勞健保、實際匯進戶頭的金額'),
+            L('每月實領薪水', inp(W, 'salary', '例如 29500', true), '扣完勞健保、實際匯進戶頭的金額。2026 年基本工資是月薪 29,500 元（扣勞健保前）'),
             L('發薪日', inp(W, 'payday', '例如 10', true), '每月幾號入帳'))),
         el('div', { class: 'lbl', style: 'margin-top:10px', text: '其他固定收入（補助、房租收入、兼職⋯）' }), inc];
     },
@@ -1594,7 +1619,7 @@ function openSetup(auto) {
       const fWrap = el('div'), sWrap = el('div');
       const fl = () => put(fWrap, rowList(W.fixedItems, x => el('div', { class: 'grid3' }, L('名稱', inp(x, 'name', '例如 房租')), L('每月金額', inp(x, 'amount', '金額', true)), L('扣款日', inp(x, 'day', '可空', true))), '固定支出', { name: '', amount: '', day: '' }));
       const sl = () => put(sWrap, rowList(W.subs, x => {
-        const cur = el('select', { class: 't' }, el('option', { value: 'TWD', text: '台幣' }), el('option', { value: 'USD', text: '美元' })); cur.value = x.currency || 'TWD'; cur.onchange = () => { x.currency = cur.value; };
+        const cur = curSelect(x.currency); cur.onchange = () => { x.currency = cur.value; if (W.onInput) W.onInput(); };
         return el('div', {}, el('div', { class: 'grid2' }, L('名稱', inp(x, 'name', '例如 Netflix')), L('扣款日', inp(x, 'day', '1–31', true))), el('div', { class: 'grid2' }, L('每月金額', inp(x, 'amount', '金額', true)), L('幣別', cur)));
       }, '訂閱', { name: '', amount: '', currency: 'TWD', day: '' }));
       fl(); sl();
@@ -1619,7 +1644,7 @@ function openSetup(auto) {
         W.saveRate = Math.min(100, Math.max(0, n(rate.value)));
         const salary = n(W.salary), other = W.incomes.reduce((a, x) => a + n(x.amount), 0), income = salary + other;
         const fixed = W.fixedItems.reduce((a, x) => a + n(x.amount), 0);
-        const subs = W.subs.reduce((a, x) => a + n(x.amount) * (x.currency === 'USD' ? (Number(S.settings.usdRate) || 32.6) : 1), 0);
+        const subs = W.subs.reduce((a, x) => a + n(x.amount) * fxRate(x.currency || 'TWD'), 0);
         const save = Math.round(income * W.saveRate / 100), living = Math.max(0, Math.round(income - save - fixed - subs));
         W.budget = living;
         put(out,
@@ -1768,6 +1793,19 @@ function setupAuthUI() {
   $('#cmAdd').addEventListener('click', () => openCardEditor(null));
   $('#setupBtn').addEventListener('click', () => openSetup(false));
 }
+// 開著設定視窗或記一筆時，背景不能捲動
+function setupScrollLock() {
+  let y = 0, locked = false;
+  const update = () => {
+    const on = !$('#pModal').hidden || $('#sheet').classList.contains('on');
+    if (on === locked) return; locked = on;
+    if (on) { y = window.scrollY; document.body.style.top = `-${y}px`; document.body.classList.add('lock'); }
+    else { document.body.classList.remove('lock'); document.body.style.top = ''; window.scrollTo(0, y); }
+  };
+  const mo = new MutationObserver(update);
+  mo.observe($('#pModal'), { attributes: true, attributeFilter: ['hidden'] });
+  mo.observe($('#sheet'), { attributes: true, attributeFilter: ['class'] });
+}
 function showInstallHint() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
   $('#a2hs').hidden = !(ios && !standalone && !HanCloud.isNative);
@@ -1814,7 +1852,7 @@ async function start() {
     try { await navigator.clipboard.writeText(csv); toast('已複製，可貼到 Excel'); } catch { toast('瀏覽器不允許複製'); }
   });
   ['#bSalary', '#bSave', '#bFixed'].forEach(id => $(id).addEventListener('input', updateFormula));
-  $('#usdRate').addEventListener('change', async () => { const v = numIn('#usdRate'); if (!(v > 0)) return; try { await S.db.doc('settings/main').set({ ...S.settings, usdRate: v }); toast('匯率已更新'); } catch { toast('儲存失敗'); } });
+  refreshFx();
   $('#subAddBtn').addEventListener('click', () => {
     const name = $('#subName').value.trim(), amount = numIn('#subAmt'), day = Math.round(numIn('#subDay'));
     if (!name || !(amount > 0)) { toast('請填名稱和金額'); return; }
@@ -1835,7 +1873,7 @@ async function start() {
     if (!f.hidden) { f.append(el('h2', { text: '新增帳戶或資產' }), accEditor(null, () => { f.hidden = true; f.replaceChildren(); }, S.assetTab !== 'all' ? S.assetTab : 'bank')); window.scrollTo(0, 0); }
   });
 
-  setupAuthUI(); showInstallHint(); setupMe();
+  setupAuthUI(); showInstallHint(); setupMe(); setupScrollLock();
   if (HanCloud.isNative && Native.notif && Native.notif.addListener) Native.notif.addListener('localNotificationActionPerformed', (e) => { const u = e && e.notification && e.notification.extra && e.notification.extra.url; if (u) location.hash = u.replace(/^#/, ''); });
   if (!HanCloud.auth.configured) { showAuth(true); $('#aMsg').className = 'amsg err'; $('#aMsg').textContent = '尚未設定雲端資料庫：請在 www/config.js 填入 Supabase 網址和金鑰。'; return; }
   HanCloud.auth.onChange((ev, sess) => {
