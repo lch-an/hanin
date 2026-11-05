@@ -106,7 +106,7 @@ nav.tabs .fab button{width:64px;height:64px;border-radius:50%;border:0;backgroun
 .cat .ico{width:38px;height:38px;border-radius:12px;font-size:18px;background:var(--soft);transition:transform .1s}
 .cat.on{color:var(--ink);font-weight:700}
 .cat.on .ico{background:var(--c);color:#fff;transform:scale(1.06)}
-.accs{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
+.accs{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 6px}
 .accs button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
 .accs button.on{border-color:var(--accent);background:var(--accent2);color:var(--accent);font-weight:700}
 .lbl{font-size:12px;color:var(--muted);margin:8px 2px 4px}
@@ -495,7 +495,7 @@ body.hideamt.peek .num:not(input),body.hideamt.peek #hLeft{filter:none}
     <div class="seg" id="typeSeg"><button data-t="expense" class="e">支出</button><button data-t="income" class="i">收入</button><button data-t="transfer">轉帳／繳卡費</button></div>
     <div class="tpl" id="tpl"></div>
     <div id="catBox"><div class="cats" id="cats"></div></div>
-    <div id="viaBox"><div class="lbl">支付管道</div><div class="accs vias" id="vias"></div></div>
+    <div id="viaBox"><div class="lbl">怎麼付（有沒有透過行動支付）</div><div class="accs vias" id="vias"></div></div>
     <div class="lbl" id="accLbl">付款方式</div>
     <div class="accs" id="accs"></div>
     <div id="recBox" class="rec" hidden></div>
@@ -531,8 +531,8 @@ const CATS = {
 const CAT = {}; for (const t in CATS) for (const [n, i, c] of CATS[t]) CAT[n] = { i, c };
 CAT['繳卡費'] = { i: '繳', c: '#5a6f8a' }; CAT['娛樂'] = CAT['娛樂'] || { i: '娛', c: '#8a63c2' }; CAT['轉帳'] = { i: '轉', c: '#5a6f8a' };
 const nonLiving = () => new Set(Array.isArray(S.settings.nonLiving) ? S.settings.nonLiving : ['房租', '保費', '訂閱']);
-const VIAS = [['', '直接付款', ''], ['LINE Pay', 'LINE Pay', ''], ['Apple Pay', 'Apple Pay', ''], ['全支付', '全支付', '']];
-const viaLabel = (v) => v ? v : '直接付款';
+const VIAS = [['', '直接刷卡／付現', ''], ['LINE Pay', 'LINE Pay', ''], ['Apple Pay', 'Apple Pay', ''], ['全支付', '全支付', '']];
+const viaLabel = (v) => v ? v : '直接刷卡／付現';
 const TYPES = {
   bank:       { label: '銀行存款',      icon: '銀', color: '#2d6a58', liab: false, flow: true },
   cash:       { label: '現金・電子支付', icon: '現', color: '#4f9e6b', liab: false, flow: true },
@@ -641,7 +641,7 @@ function renderSheet() {
   $('#vias').replaceChildren(...VIAS.map(([v, l, i]) => el('button', { type: 'button', class: (F.via === v ? 'on' : ''), text: (i ? i + ' ' : '') + l, onclick: () => { F.via = v; F.accTouched = true; renderSheet(); } })));
   let srcs = F.type === 'expense' ? payables() : F.type === 'income' ? payables().filter(a => typeOf(a) !== 'card') : transferables();
   if (F.type === 'expense' && F.via) { const bound = srcs.filter(a => (a.wallets || []).includes(F.via)); srcs = bound.length ? bound : srcs.filter(a => typeOf(a) === 'card'); }
-  $('#accLbl').textContent = F.type === 'expense' ? (F.via ? `${F.via} 裡的哪張卡` : '付款方式') : F.type === 'income' ? '入帳到' : '從哪裡轉出';
+  $('#accLbl').textContent = F.type === 'expense' ? (F.via ? `${F.via} 綁的哪張卡／帳戶扣款` : '從哪個帳戶或哪張卡扣款') : F.type === 'income' ? '入帳到' : '從哪裡轉出';
   if (!srcs.some(a => a.id === F.acc)) F.acc = (srcs[0] || {}).id || null;
   $('#accs').replaceChildren(...srcs.map(a => el('button', { type: 'button', class: a.id === F.acc ? 'on' : '', text: a.name, onclick: () => { F.acc = a.id; F.accTouched = true; renderSheet(); } })));
   if (isT) {
@@ -710,7 +710,7 @@ function renderTemplates() {
 }
 function openSheet(tx, presetDate) {
   if (!S.db) { toast('目前無法記帳'); return; }
-  if (tx) Object.assign(F, { id: tx.id, type: tx.type, cat: tx.category, acc: tx.account, to: tx.to || null, via: tx.via || '', date: tx.date, expr: String(tx.amount) });
+  if (tx) Object.assign(F, { id: tx.id, type: tx.type, cat: tx.category, acc: tx.account, to: tx.to || null, via: tx.via || '', date: tx.date, expr: String(tx.amount), accTouched: true });
   else Object.assign(F, { id: null, type: 'expense', date: presetDate || todayStr(), expr: '', via: lastVia, acc: lastExpenseAcc || F.acc, accTouched: false });
   $('#fNote').value = tx ? (tx.note || '') : '';
   $('#delTx').classList.remove('sure'); $('#delTx').textContent = '刪除';
