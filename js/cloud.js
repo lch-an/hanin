@@ -36,7 +36,7 @@ window.HanCloud = (() => {
     async session() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     onChange(cb) { if (sb) sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signUp(email, password, name) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name, privacy_version: '2026-11-05', privacy_agreed_at: new Date().toISOString() } } });
       if (error) throw new Error(errText(error));
       return { needConfirm: !data.session };
     },
