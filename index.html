@@ -305,6 +305,9 @@ body{background:transparent}
   radial-gradient(36% 24% at 92% 22%, rgba(245,150,80,.32), transparent 70%),
   radial-gradient(48% 30% at 75% 96%, rgba(120,110,235,.32), transparent 70%),
   radial-gradient(40% 28% at 4% 82%, rgba(235,95,135,.26), transparent 70%), var(--bg)}
+.ios-bg::after{content:"";position:absolute;left:-10%;right:-10%;bottom:-40px;height:230px;
+  background:linear-gradient(100deg,#2fb38a 0%,#3a8de0 30%,#9b6cf0 55%,#f0708f 78%,#f2a64a 100%);opacity:.55;filter:blur(36px)}
+.ios-surface:not(.dark) .ios-bg::after{opacity:.45}
 .wrap{max-width:402px}
 .sheet,.modal .box{max-width:402px}
 .lockscreen{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,12,.25);-webkit-backdrop-filter:blur(30px) saturate(1.4);backdrop-filter:blur(30px) saturate(1.4)}
