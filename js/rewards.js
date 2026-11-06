@@ -139,10 +139,14 @@
   const active = (r, date) => (!r.valid_from || r.valid_from <= date) && (!r.valid_to || r.valid_to >= date);
 
   /** 一張卡對某筆消費最適用的規則：沒有標籤的規則適用所有消費，有標籤的要符合其中一個；取回饋最高的 */
-  function bestRule(card, tags, date) {
+  /** 這張卡有哪些可切換的權益方案 */
+  function plansOf(card) { return [...new Set((card.card_rewards || []).map(r => r.plan).filter(Boolean))]; }
+  /** plan：使用者目前切到的方案；undefined＝不管方案（找所有方案裡最好的） */
+  function bestRule(card, tags, date, plan) {
     let best = null;
     for (const r of card.card_rewards || []) {
       if (!active(r, date)) continue;
+      if (plan !== undefined && r.plan && r.plan !== plan) continue;
       const need = r.channel_tags || [];
       if (need.length && !need.some(t => tags.has(t))) continue;
       if (!best || Number(r.rate) > Number(best.rate)) best = r;
@@ -151,13 +155,13 @@
   }
 
   /** 估算這條規則在目前週期已經拿到多少回饋 */
-  function usedReward(rule, account, txns, date, card) {
+  function usedReward(rule, account, txns, date, card, plan) {
     if (!rule.cap_amount) return 0;
     const from = rule.cap_period === 'campaign' ? (rule.valid_from || '0000') : periodStart(rule.cap_period || 'month', date);
     let used = 0;
     for (const t of txns) {
       if (t.type !== 'expense' || t.account !== account || !t.date || t.date < from || t.date > date) continue;
-      const r = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date);
+      const r = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
       if (r && r.id === rule.id) used += Number(t.amount) * Number(rule.rate) / 100;
     }
     return Math.min(used, rule.cap_amount);
@@ -174,23 +178,27 @@
     for (const acc of p.accounts) {
       const card = acc.cardId && p.cards.get(acc.cardId);
       if (!card) continue;
-      const rule = bestRule(card, tags, date);
-      if (!rule) { out.push({ account: acc, card, rule: null, rate: 0, reward: 0, capLeft: null }); continue; }
+      // 有方案的卡：只用目前切到的方案（沒設定＝只算不分方案的規則），另外提示「切換到哪個方案更划算」
+      const plans = plansOf(card), plan = plans.length ? (acc.cardPlan || null) : undefined;
+      const rule = bestRule(card, tags, date, plan);
+      const alt = plans.length ? bestRule(card, tags, date) : null;
+      const switchTo = alt && alt.plan && alt.plan !== plan && Number(alt.rate) > Number(rule ? rule.rate : 0) ? { plan: alt.plan, rate: Number(alt.rate), rule: alt } : null;
+      if (!rule) { out.push({ account: acc, card, rule: null, rate: 0, reward: 0, capLeft: null, switchTo }); continue; }
       if (rule.min_spend && amt && amt < rule.min_spend) { out.push({ account: acc, card, rule, rate: 0, reward: 0, capLeft: null, belowMin: true }); continue; }
-      const capLeft = rule.cap_amount ? Math.max(0, rule.cap_amount - usedReward(rule, acc.id, p.txns, date, card)) : null;
+      const capLeft = rule.cap_amount ? Math.max(0, rule.cap_amount - usedReward(rule, acc.id, p.txns, date, card, plan)) : null;
       let reward = amt * Number(rule.rate) / 100;
       if (capLeft !== null && reward > capLeft) {
         // 超過上限的部分改用這張卡其他沒上限的規則（通常是一般消費回饋）
         const over = amt - capLeft / (Number(rule.rate) / 100);
-        const fb = bestRule({ card_rewards: (card.card_rewards || []).filter(r => r.id !== rule.id && !r.cap_amount) }, tags, date);
+        const fb = bestRule({ card_rewards: (card.card_rewards || []).filter(r => r.id !== rule.id && !r.cap_amount) }, tags, date, plan);
         reward = capLeft + (fb ? over * Number(fb.rate) / 100 : 0);
       }
       const effRate = amt ? reward / amt * 100 : (capLeft === 0 ? 0 : Number(rule.rate));
-      out.push({ account: acc, card, rule, rate: effRate, reward, capLeft });
+      out.push({ account: acc, card, rule, rate: effRate, reward, capLeft, switchTo });
     }
     return out.sort((a, b) => b.rate - a.rate || b.reward - a.reward);
   }
 
-  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend };
+  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf };
   if (typeof module !== 'undefined') module.exports = api; else root.HanRewards = api;
 })(typeof window !== 'undefined' ? window : globalThis);

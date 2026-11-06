@@ -187,13 +187,13 @@ window.HanCloud = (() => {
   async function loadCatalog() {
     const cacheKey = 'hanin-catalog-v1';
     try {
-      const RW = 'card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to,source_url,updated_at)';
-      const cardsQ = (extra) => sb.from('cards').select(`id,bank_id,name,annual_fee,active,last_checked_at${extra},${RW}`).eq('active', true);
+      const RW = (p) => `card_rewards(id,${p}channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to,source_url,updated_at)`;
+      const cardsQ = (extra, p) => sb.from('cards').select(`id,bank_id,name,annual_fee,active,last_checked_at${extra},${RW(p)}`).eq('active', true);
       let [b, c] = await Promise.all([
         sb.from('banks').select('id,name').eq('active', true).order('code', { nullsFirst: false }),
-        cardsQ(',verified'),
+        cardsQ(',verified', 'plan,'),
       ]);
-      if (c.error) c = await cardsQ(''); // 資料庫還沒加 verified 欄位時照樣能用
+      if (c.error) c = await cardsQ('', ''); // 資料庫還沒加新欄位時照樣能用
       if (b.error || c.error) throw b.error || c.error;
       const cat = { banks: b.data, cards: c.data, at: Date.now() };
       kv.set(cacheKey, JSON.stringify(cat));
@@ -222,7 +222,7 @@ window.HanCloud = (() => {
     async banks() { const { data, error } = await sb.from('banks').select('id,code,name,domain,card_list_url,last_run_at,last_run_status,active').order('code', { nullsFirst: false }); if (error) throw error; return data; },
     async updateBank(id, patch) { const { error } = await sb.from('banks').update(patch).eq('id', id); if (error) throw error; },
     async cardsOfBank(bankId) {
-      const sel = (x) => sb.from('cards').select(`id,bank_id,name,annual_fee,source_url,active${x},card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to)`).eq('bank_id', bankId).order('name');
+      const sel = (x) => sb.from('cards').select(`id,bank_id,name,annual_fee,source_url,active${x},card_rewards(id,${x ? 'plan,' : ''}channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to)`).eq('bank_id', bankId).order('name');
       let { data, error } = await sel(',verified');
       if (error) ({ data, error } = await sel(''));
       if (error) throw error; return data;

@@ -1008,7 +1008,7 @@ function accEditor(acc, onDone, preset) {
   const rowW = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '綁定在哪些行動支付（可多選）' }), wbox);
   const valLbl = el('label', { text: '目前金額' });
   const rowCard = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '結帳日' }), close), el('div', {}, el('label', { text: '自動扣繳日' }), due));
-  const cp = cardPicker(acc.cardId);
+  const cp = cardPicker(acc.cardId, acc.cardPlan);
   const rowPick = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '這是哪張卡？（用來算回饋）' }), cp.node);
   const rowStock = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '股數（選填）' }), shares), el('div', {}, el('label', { text: '股價（選填）' }), price));
   const rowCur = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '幣別' }), cur), el('div', {}, el('label', { text: '匯率（1 美元＝？台幣）' }), fx));
@@ -1022,7 +1022,7 @@ function accEditor(acc, onDone, preset) {
   saveB.addEventListener('click', async () => {
     const n = name.value.trim(); if (!n) { toast('請輸入名稱'); return; }
     const t = type.value, num = (x) => { const v = Number(String(x.value).replace(/,/g, '')); return Number.isFinite(v) ? v : 0; };
-    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null };
+    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null, cardPlan: t === 'card' ? (cp.plan() || null) : null };
     if (TYPES[t].flow) { data.currency = 'TWD'; data.fx = null; data.shares = null; data.price = null; const v = num(val); if (isNew || Math.round(valueOf(acc)) !== Math.round(v) || typeOf(acc) !== t) { data.base = v; data.baseAt = Date.now(); } }
     else { data.currency = cur.value; data.fx = cur.value === 'USD' ? (num(fx) || 32.6) : null; data.base = num(val); data.baseAt = Date.now();
       const hasS = ['tw_stock', 'us_stock'].includes(t) && shares.value !== '' && price.value !== '';
@@ -1055,7 +1055,7 @@ function accMeta(a) {
     const cyc = allTx().filter(x => x.type === 'expense' && x.account === a.id && x.date >= cs).reduce((s, x) => s + x.amount, 0);
     bits.push(`${a.closeDay} 日結帳・${a.dueDay || '?'} 日扣款・本期記帳 ${money(cyc)}`);
   }
-  if (ty === 'card' && a.cardId) { const c = CARDS.byId.get(a.cardId); bits.push(c ? '回饋：' + rewardSummary(c) : '卡片資料讀取中'); }
+  if (ty === 'card' && a.cardId) { const c = CARDS.byId.get(a.cardId); bits.push(c ? (HanRewards.plansOf(c).length ? `方案：${a.cardPlan || '未設定'}・` : '') + '回饋：' + rewardSummary(c, a.cardPlan || undefined) : '卡片資料讀取中'); }
   if ((a.wallets || []).length) bits.push('綁定 ' + a.wallets.join('、'));
   if (a.note) bits.push(a.note);
   return bits.join('｜');
@@ -1327,12 +1327,14 @@ async function loadCards() {
 }
 const bankName = (id) => (CARDS.banks.find(b => b.id === id) || {}).name || '';
 const pctTxt = (r) => (Math.round(Number(r) * 100) / 100) + '%';
-function rewardSummary(c) {
-  const rs = (c.card_rewards || []).slice().sort((a, b) => b.rate - a.rate);
+function rewardSummary(c, plan) {
+  const ps = HanRewards.plansOf(c);
+  const rs = (c.card_rewards || []).filter(r => plan === undefined || !r.plan || r.plan === plan).slice().sort((a, b) => b.rate - a.rate);
+  if (ps.length && plan === undefined) return (c.verified === false ? '（AI 查詢，未核對）' : '') + `可切換 ${ps.length} 種方案：` + ps.map(p => { const m = Math.max(...(c.card_rewards || []).filter(r => r.plan === p).map(r => Number(r.rate))); return `${p} 最高 ${pctTxt(m)}`; }).join('、');
   if (!rs.length) return '尚無資料';
   return (c.verified === false ? '（AI 查詢，未核對）' : '') + rs.slice(0, 3).map(r => `${r.channel} ${pctTxt(r.rate)}${r.cap_amount ? `（上限 ${fmt.format(r.cap_amount)}）` : ''}`).join('、') + (rs.length > 3 ? ` 等 ${rs.length} 項` : '');
 }
-function cardPicker(cur) {
+function cardPicker(cur, curPlan) {
   const curCard = cur && CARDS.byId.get(cur);
   const bank = el('select', { class: 't' }, el('option', { value: '', text: CARDS.loaded ? '選擇銀行' : '卡片資料讀取中…' }), ...CARDS.banks.map(b => el('option', { value: b.id, text: b.name })));
   const card = el('select', { class: 't' });
@@ -1340,14 +1342,26 @@ function cardPicker(cur) {
     const list = CARDS.list.filter(c => c.bank_id === bank.value).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
     card.replaceChildren(el('option', { value: '', text: bank.value ? (list.length ? '選擇卡片' : '這家銀行還沒有卡片資料') : '—' }), ...list.map(c => el('option', { value: c.id, text: c.name })));
   };
+  // 有「切換方案」的卡（例如 CUBE）：選目前切到哪個方案，推薦才會準
+  const plan = el('select', { class: 't' });
+  const planRow = el('div', { style: 'margin-top:6px' }, el('label', { text: '目前切換的方案（這張卡要在 App 切換權益）' }), plan);
+  const fillPlan = () => {
+    const c = CARDS.byId.get(card.value), ps = c ? HanRewards.plansOf(c) : [];
+    planRow.hidden = !ps.length;
+    const keep = plan.value || curPlan || '';
+    plan.replaceChildren(el('option', { value: '', text: '還沒設定（推薦時會提醒切換）' }), ...ps.map(p => el('option', { value: p, text: p })));
+    plan.value = ps.includes(keep) ? keep : '';
+  };
   if (curCard) bank.value = curCard.bank_id;
   fill(); if (curCard) card.value = curCard.id;
-  bank.addEventListener('change', fill);
+  fillPlan();
+  bank.addEventListener('change', () => { fill(); fillPlan(); });
+  card.addEventListener('change', fillPlan);
   // 清單裡沒有？讓 AI 查（用站方的免費額度；已經有人查過的卡直接用資料庫的紀錄）
   const q = el('input', { class: 't', placeholder: '輸入卡名，例如 CUBE卡' });
   const msg = el('div', { class: 'small', style: 'min-height:1.2em;margin-top:4px' });
   const picks = el('div', { class: 'accs', style: 'margin-top:4px' });
-  const choose = (c) => { if (!CARDS.byId.has(c.id)) { CARDS.list.push(c); CARDS.byId.set(c.id, c); } bank.value = c.bank_id; fill(); card.value = c.id; };
+  const choose = (c) => { if (!CARDS.byId.has(c.id)) { CARDS.list.push(c); CARDS.byId.set(c.id, c); } bank.value = c.bank_id; fill(); card.value = c.id; fillPlan(); };
   const go = el('button', { class: 'btn', type: 'button', text: 'AI 查詢', onclick: async () => {
     const name = q.value.trim(); picks.replaceChildren(); msg.style.color = '';
     if (!bank.value) { msg.textContent = '先選擇銀行'; return; }
@@ -1368,7 +1382,7 @@ function cardPicker(cur) {
     el('summary', { class: 'small', text: '清單裡沒有我的卡？讓 AI 查' }),
     el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '先選銀行再輸入卡名。已經有人查過的卡會直接使用，不用重查。AI 依既有知識整理、未上網查證，不保證完全正確，請對照銀行官網。' }),
     el('div', { class: 'flex' }, q, go), picks, msg);
-  return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), ai), value: () => card.value };
+  return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), planRow, ai), value: () => card.value, plan: () => (planRow.hidden ? '' : plan.value) };
 }
 function renderRec() {
   const box = $('#recBox'); if (!box) return;
@@ -1387,7 +1401,9 @@ function renderRec() {
   if (topCard && topCard.verified === false) head.append(el('div', { class: 'small muted', text: '這張卡的回饋由 AI 查詢、尚未核對，不保證完全正確，以銀行公告為準' }));
   const alts = el('div', { class: 'alts' }, ...recs.slice(0, 4).map(r => el('button', { type: 'button', class: r.account.id === F.acc ? 'on' : '', text: `${r.account.name.replace(/卡$/, '')} ${pctTxt(r.rate)}`, title: r.rule ? r.rule.channel + (r.rule.conditions ? '：' + r.rule.conditions : '') : '', onclick: () => { F.acc = r.account.id; F.accTouched = true; renderSheet(); } })));
   const cond = top.rule && top.rule.conditions ? el('div', { class: 'small muted', style: 'margin-top:4px', text: '條件：' + top.rule.conditions }) : null;
-  put(box, head, cond, alts);
+  const sw = recs.filter(r => r.switchTo && r.switchTo.rate > top.rate).sort((a, b) => b.switchTo.rate - a.switchTo.rate)[0];
+  const swTip = sw ? el('div', { class: 'small', style: 'margin-top:4px;color:var(--warn)', text: `${sw.account.name} 切換到「${sw.switchTo.plan}」方案可拿 ${pctTxt(sw.switchTo.rate)}（${sw.switchTo.rule.channel}）` }) : null;
+  put(box, head, cond, swTip, alts);
 }
 
 // ===== 保單截圖 AI 解讀 =====
@@ -1652,6 +1668,7 @@ function openCardEditor(card) {
   const rows = [];
   const addRule = (r = {}) => {
     const ch = el('input', { class: 't', value: r.channel || '', placeholder: '通路說明，例如 指定行動支付' });
+    const pl = el('input', { class: 't', value: r.plan || '', placeholder: '方案（可空），例如 玩數位' });
     const rate = el('input', { class: 't num', inputmode: 'decimal', value: r.rate ?? '', placeholder: '回饋 %' });
     const cap = el('input', { class: 't num', inputmode: 'decimal', value: r.cap_amount ?? '', placeholder: '上限（元，可空）' });
     const per = el('select', { class: 't' }, el('option', { value: '', text: '無上限週期' }), ...Object.entries(PERIOD_TXT).map(([k, v]) => el('option', { value: k, text: v })));
@@ -1670,13 +1687,14 @@ function openCardEditor(card) {
     showTags();
     const wrap = el('div', { class: 'edit', style: 'margin-bottom:8px' },
       el('div', { class: 'grid2' }, ch, rate),
+      el('div', { class: 'grid1', style: 'margin-top:6px' }, pl),
       el('details', { style: 'margin:6px 0' }, el('summary', { class: 'small' }, '適用通路：', tagLbl), chips),
       el('div', { class: 'grid2' }, cap, per),
       el('div', { class: 'grid2' }, min, el('div', {}, el('label', { text: '活動到期日（長期權益空著）' }), to)),
       el('div', { class: 'grid1' }, cond),
       el('div', { class: 'flex', style: 'justify-content:flex-end' }, el('button', { class: 'x', type: 'button', text: '刪除這條', onclick: () => { wrap.remove(); rows.splice(rows.indexOf(get), 1); } })));
     const num = (x) => x.value.trim() === '' ? null : Number(x.value.replace(/,/g, ''));
-    const get = () => ({ channel: ch.value.trim(), channel_tags: [...picked], rate: num(rate), cap_amount: num(cap), cap_period: per.value || null, min_spend: num(min), conditions: cond.value.trim() || null, valid_to: to.value || null });
+    const get = () => ({ plan: pl.value.trim() || null, channel: ch.value.trim(), channel_tags: [...picked], rate: num(rate), cap_amount: num(cap), cap_period: per.value || null, min_spend: num(min), conditions: cond.value.trim() || null, valid_to: to.value || null });
     rows.push(get); rulesBox.append(wrap);
   };
   (card && card.card_rewards && card.card_rewards.length ? card.card_rewards.slice().sort((a, b) => b.rate - a.rate) : [{}]).forEach(addRule);
@@ -1729,7 +1747,7 @@ function openCardEditor(card) {
       el('div', { class: 'grid2' }, name, active),
       el('div', { class: 'grid2' }, fee, url)),
     el('div', { class: 'sb', style: 'margin:10px 0 6px' }, el('b', { style: 'font-size:14px', text: '回饋規則' }), el('button', { class: 'btn ghost', type: 'button', text: '＋ 新增一條', onclick: () => addRule({}) })),
-    el('div', { class: 'small muted', style: 'margin-bottom:6px', text: '一般消費一條、每個加碼通路各一條。通路沒選＝所有消費都適用。記帳時會挑符合的規則裡回饋最高的。' }),
+    el('div', { class: 'small muted', style: 'margin-bottom:6px', text: '一般消費一條、每個加碼通路各一條。通路沒選＝所有消費都適用。要在 App 切換方案的卡（例如 CUBE），把每條加碼填上方案名稱；不分方案的規則方案留空。記帳時會用使用者目前切到的方案。' }),
     rulesBox, msg,
     el('div', { class: 'flex', style: 'justify-content:space-between' }, del || el('span'), save));
   m.hidden = false;
