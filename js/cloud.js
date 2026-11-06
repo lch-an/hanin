@@ -46,7 +46,7 @@ window.HanCloud = (() => {
     async session() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     onChange(cb) { if (sb) sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signUp(email, password, name) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: backUrl(), data: { name, privacy_version: '2026-11-06', privacy_agreed_at: new Date().toISOString() } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: backUrl(), data: { name, privacy_version: '2026-11-06b', privacy_agreed_at: new Date().toISOString() } } });
       if (error) throw new Error(errText(error));
       return { needConfirm: !data.session };
     },
@@ -187,10 +187,13 @@ window.HanCloud = (() => {
   async function loadCatalog() {
     const cacheKey = 'hanin-catalog-v1';
     try {
-      const [b, c] = await Promise.all([
+      const RW = 'card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to,source_url,updated_at)';
+      const cardsQ = (extra) => sb.from('cards').select(`id,bank_id,name,annual_fee,active,last_checked_at${extra},${RW}`).eq('active', true);
+      let [b, c] = await Promise.all([
         sb.from('banks').select('id,name').eq('active', true).order('code', { nullsFirst: false }),
-        sb.from('cards').select('id,bank_id,name,annual_fee,active,last_checked_at,card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to,source_url,updated_at)').eq('active', true),
+        cardsQ(',verified'),
       ]);
+      if (c.error) c = await cardsQ(''); // 資料庫還沒加 verified 欄位時照樣能用
       if (b.error || c.error) throw b.error || c.error;
       const cat = { banks: b.data, cards: c.data, at: Date.now() };
       kv.set(cacheKey, JSON.stringify(cat));
@@ -219,14 +222,16 @@ window.HanCloud = (() => {
     async banks() { const { data, error } = await sb.from('banks').select('id,code,name,domain,card_list_url,last_run_at,last_run_status,active').order('code', { nullsFirst: false }); if (error) throw error; return data; },
     async updateBank(id, patch) { const { error } = await sb.from('banks').update(patch).eq('id', id); if (error) throw error; },
     async cardsOfBank(bankId) {
-      const { data, error } = await sb.from('cards').select('id,bank_id,name,annual_fee,source_url,active,card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to)').eq('bank_id', bankId).order('name');
+      const sel = (x) => sb.from('cards').select(`id,bank_id,name,annual_fee,source_url,active${x},card_rewards(id,channel,channel_tags,rate,cap_amount,cap_period,min_spend,conditions,valid_from,valid_to)`).eq('bank_id', bankId).order('name');
+      let { data, error } = await sel(',verified');
+      if (error) ({ data, error } = await sel(''));
       if (error) throw error; return data;
     },
     async saveCard(card, rules) { const { data, error } = await sb.rpc('admin_save_card', { card, rules }); if (error) throw new Error(error.message); return data; },
     async deleteCard(id) { const { error } = await sb.rpc('admin_delete_card', { card_id: id }); if (error) throw new Error(error.message); },
     // 用 Google Gemini 上網查卡片權益（只送卡名與銀行名），回傳草稿給管理員核對
     async lookupCard(name, bank) {
-      const { data, error } = await sb.functions.invoke('card-lookup', { body: { name, bank } });
+      const { data, error } = await sb.functions.invoke('card-lookup', { body: { mode: 'draft', name, bank } });
       if (error) {
         let msg = 'AI 搜尋失敗，請稍後再試';
         try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
@@ -260,5 +265,15 @@ window.HanCloud = (() => {
 
   // AI 功能（保單截圖、回饋自動更新）要在 config.js 設 ai: true 才會出現
   const aiEnabled = !!cfg.ai;
-  return { sb, auth, openDB, loadCatalog, analyzePolicy, admin, isNative, aiEnabled, push };
+  // 任何登入的使用者：清單裡沒有的卡讓 AI 查（已經有人查過就直接用資料庫的紀錄）
+  async function lookupCard(name, bankId) {
+    const { data, error } = await sb.functions.invoke('card-lookup', { body: { mode: 'add', name, bank_id: bankId } });
+    if (error) {
+      let msg = 'AI 查詢失敗，請稍後再試';
+      try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    return data.result;
+  }
+  return { sb, auth, openDB, loadCatalog, analyzePolicy, lookupCard, admin, isNative, aiEnabled, push };
 })();

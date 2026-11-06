@@ -248,6 +248,7 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .cat{flex:0 0 auto;flex-direction:row!important;border:1px solid var(--line)!important;border-radius:999px!important;padding:6px 12px!important;font-size:13.5px!important;color:var(--ink)!important;background:var(--panel)!important}
 .cat.on{background:var(--c)!important;border-color:var(--c)!important;color:#fff!important;font-weight:700}
 .cat .nl{margin-left:4px;font-size:10px}
+.aibox summary{color:var(--accent);cursor:pointer;padding:6px 0}
 .aibox .flex{gap:8px}.aibox .flex .t{flex:1;min-width:0}.aibox a{color:var(--accent)}
 .cat.more,.accs button.more{border-style:dashed!important;color:var(--muted)!important;background:transparent!important}
 .cat.on .nl{color:#fff}
@@ -1329,7 +1330,7 @@ const pctTxt = (r) => (Math.round(Number(r) * 100) / 100) + '%';
 function rewardSummary(c) {
   const rs = (c.card_rewards || []).slice().sort((a, b) => b.rate - a.rate);
   if (!rs.length) return '尚無資料';
-  return rs.slice(0, 3).map(r => `${r.channel} ${pctTxt(r.rate)}${r.cap_amount ? `（上限 ${fmt.format(r.cap_amount)}）` : ''}`).join('、') + (rs.length > 3 ? ` 等 ${rs.length} 項` : '');
+  return (c.verified === false ? '（AI 查詢，未核對）' : '') + rs.slice(0, 3).map(r => `${r.channel} ${pctTxt(r.rate)}${r.cap_amount ? `（上限 ${fmt.format(r.cap_amount)}）` : ''}`).join('、') + (rs.length > 3 ? ` 等 ${rs.length} 項` : '');
 }
 function cardPicker(cur) {
   const curCard = cur && CARDS.byId.get(cur);
@@ -1342,7 +1343,32 @@ function cardPicker(cur) {
   if (curCard) bank.value = curCard.bank_id;
   fill(); if (curCard) card.value = curCard.id;
   bank.addEventListener('change', fill);
-  return { node: el('div', { class: 'grid2', style: 'margin:0' }, bank, card), value: () => card.value };
+  // 清單裡沒有？讓 AI 查（用站方的免費額度；已經有人查過的卡直接用資料庫的紀錄）
+  const q = el('input', { class: 't', placeholder: '輸入卡名，例如 CUBE卡' });
+  const msg = el('div', { class: 'small', style: 'min-height:1.2em;margin-top:4px' });
+  const picks = el('div', { class: 'accs', style: 'margin-top:4px' });
+  const choose = (c) => { if (!CARDS.byId.has(c.id)) { CARDS.list.push(c); CARDS.byId.set(c.id, c); } bank.value = c.bank_id; fill(); card.value = c.id; };
+  const go = el('button', { class: 'btn', type: 'button', text: 'AI 查詢', onclick: async () => {
+    const name = q.value.trim(); picks.replaceChildren(); msg.style.color = '';
+    if (!bank.value) { msg.textContent = '先選擇銀行'; return; }
+    if (name.length < 2) { msg.textContent = '請輸入卡名'; return; }
+    go.disabled = true; go.textContent = '查詢中…'; msg.textContent = '先找資料庫，沒有的話 AI 會上網查官網，約 10～30 秒';
+    try {
+      const r = await HanCloud.lookupCard(name, bank.value);
+      if (r.status === 'choose') { msg.textContent = '資料庫裡有幾張相近的卡，選一張：'; picks.replaceChildren(...r.cards.map(c => el('button', { type: 'button', text: c.name, onclick: () => { const full = CARDS.byId.get(c.id); if (full) choose(full); picks.replaceChildren(); msg.textContent = '已選好'; } }))); return; }
+      if (r.status === 'notfound') { msg.style.color = 'var(--exp)'; msg.textContent = r.cached ? '這張卡最近查過但找不到資料，換個名稱試試（例如加上銀行名）' : '找不到這張卡的回饋資料，換個名稱試試'; return; }
+      choose(r.card);
+      const n = (r.card.card_rewards || []).length;
+      msg.style.color = 'var(--warn)';
+      msg.textContent = (r.status === 'exists' ? `資料庫已經有「${r.card.name}」，已幫你選好（不用再查）。` : `已查到「${r.card.name}」共 ${n} 條回饋並幫你選好。`) + (r.card.verified === false ? '這筆資料由 AI 查詢，' + (r.disclaimer || 'AI 辨識不保證完全正確，請對照銀行官網。') : '');
+    } catch (e) { msg.style.color = 'var(--exp)'; msg.textContent = e.message || String(e); }
+    finally { go.disabled = false; go.textContent = 'AI 查詢'; }
+  } });
+  const ai = el('details', { class: 'aibox', style: 'margin-top:6px' },
+    el('summary', { class: 'small', text: '清單裡沒有我的卡？讓 AI 查' }),
+    el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '先選銀行再輸入卡名。已經有人查過的卡會直接使用，不用重查。AI 辨識不保證完全正確，請對照銀行官網。' }),
+    el('div', { class: 'flex' }, q, go), picks, msg);
+  return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), ai), value: () => card.value };
 }
 function renderRec() {
   const box = $('#recBox'); if (!box) return;
@@ -1357,6 +1383,8 @@ function renderRec() {
   const head = top.rate > 0
     ? el('div', {}, '建議刷 ', el('b', { text: top.account.name }), ` ${pctTxt(top.rate)}` + (amount ? `，約回饋 ${money(top.reward)}` : '') + (top.rule ? `（${top.rule.channel}${capTxt(top)}）` : ''))
     : el('div', { text: '你的卡在這筆消費都沒有符合的回饋資料' });
+  const topCard = top.rate > 0 && top.account && CARDS.byId.get(top.account.cardId);
+  if (topCard && topCard.verified === false) head.append(el('div', { class: 'small muted', text: '這張卡的回饋由 AI 查詢、尚未核對，不保證完全正確，以銀行公告為準' }));
   const alts = el('div', { class: 'alts' }, ...recs.slice(0, 4).map(r => el('button', { type: 'button', class: r.account.id === F.acc ? 'on' : '', text: `${r.account.name.replace(/卡$/, '')} ${pctTxt(r.rate)}`, title: r.rule ? r.rule.channel + (r.rule.conditions ? '：' + r.rule.conditions : '') : '', onclick: () => { F.acc = r.account.id; F.accTouched = true; renderSheet(); } })));
   const cond = top.rule && top.rule.conditions ? el('div', { class: 'small muted', style: 'margin-top:4px', text: '條件：' + top.rule.conditions }) : null;
   put(box, head, cond, alts);
@@ -1607,7 +1635,7 @@ async function renderCardList() {
   try {
     const cards = await HanCloud.admin.cardsOfBank(bank);
     put(list, cards.length ? el('ul', { class: 'list' }, ...cards.map(c => el('li', { onclick: () => openCardEditor(c) },
-      el('div', { class: 'grow' }, el('div', { class: 'a', text: c.name + (c.active ? '' : '（停發）') }), el('div', { class: 'b', text: rewardSummary(c) })),
+      el('div', { class: 'grow' }, el('div', { class: 'a', text: c.name + (c.active ? '' : '（停發）') + (c.verified === false ? '・AI 待核對' : '') }), el('div', { class: 'b', text: rewardSummary(c) })),
       el('span', { class: 'x', text: '編輯' })))) : el('div', { class: 'empty', text: '這家銀行還沒有卡片，按「新增卡片」開始' }));
   } catch (e) { put(list, el('div', { class: 'empty', text: '讀不到：' + (e.message || e) })); }
 }
