@@ -466,16 +466,17 @@ body{background:transparent}
         <label>其他固定支出（訂閱以外）<input class="t num" id="bFixed" inputmode="numeric" placeholder="例如手機費、自己繳的保費"></label>
       </div>
       <div class="subs">
-        <div class="sb"><b style="font-size:14px">每月訂閱</b><span class="small muted" id="fxLbl"></span></div>
+        <div class="sb"><b style="font-size:14px">每月訂閱與固定扣款</b><span class="small muted" id="fxLbl"></span></div>
         <ul class="list" id="subList"></ul>
         <div class="subadd">
           <input class="t" id="subName" placeholder="名稱，例如 Spotify">
           <input class="t num" id="subAmt" inputmode="decimal" placeholder="金額">
           <select class="t" id="subCur"><option value="TWD">台幣</option><option value="USD">美元</option><option value="JPY">日圓</option><option value="EUR">歐元</option><option value="HKD">港幣</option><option value="CNY">人民幣</option><option value="GBP">英鎊</option><option value="KRW">韓元</option><option value="SGD">新加坡幣</option><option value="AUD">澳幣</option></select>
           <input class="t num" id="subDay" inputmode="numeric" placeholder="扣款日">
+          <select class="t" id="subAcc"><option value="">從哪裡扣款</option></select>
           <button class="btn ghost" id="subAddBtn" type="button">＋ 加入</button>
         </div>
-        <div class="small muted">按「記一筆」會打開記帳畫面，分類、金額、備註都填好；美元訂閱刷台灣的卡通常還有約 1.5% 國外交易手續費，這裡沒算進去。</div>
+        <div class="small muted">填了扣款日和扣款帳戶，每個月到那天就會自動記一筆，不用手動記；房租、保費、手機費也可以加在這裡，按「編輯」改分類。外幣訂閱依當天匯率換算成台幣，刷台灣的卡通常還有約 1.5% 國外交易手續費，這裡沒算進去。</div>
       </div>
       <div class="formula" id="bFormula"></div>
       <div class="flex" style="margin-top:10px"><label class="small muted" style="white-space:nowrap">目前預算</label><input class="t num" id="setBudget" inputmode="numeric"><button class="btn ghost" id="useSuggest" type="button" style="white-space:nowrap">用建議值</button><button class="btn" id="setBudgetBtn" type="button" style="white-space:nowrap">儲存</button></div>
@@ -765,7 +766,8 @@ function topCats(type, list, n, cur) {
   const cnt = new Map(), since = Date.now() - 90 * 86400000;
   for (const t of allTx()) if (t.type === type && (t.createdAt || Date.parse(t.date) || 0) >= since) cnt.set(t.category, (cnt.get(t.category) || 0) + 1);
   const order = list.map((c, i) => [c, i]).sort((a, b) => (cnt.get(b[0][0]) || 0) - (cnt.get(a[0][0]) || 0) || a[1] - b[1]).map(x => x[0]);
-  let top = order.slice(0, n);
+  const nl = nonLiving();
+  let top = order.filter(c => !nl.has(c[0])).slice(0, n); // 房租、保費、訂閱這類固定支出會自動記帳，平常不用出現在前面
   const curC = list.find(c => c[0] === cur);
   if (curC && !top.includes(curC)) top = [...top.slice(0, n - 1), curC];
   return list.filter(c => top.includes(c));
@@ -1146,24 +1148,63 @@ const curSelect = (val) => { const sel = el('select', { class: 't' }, ...CURS.ma
 const fmtCur = (cur, amt) => `${CUR_NAME[cur] || cur} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(amt)}`;
 const subTWD = (x) => Math.round(Number(x.amount) * fxRate(x.currency || 'TWD'));
 const subsMonthly = () => (S.settings.subs || []).reduce((a, x) => a + subTWD(x), 0);
+// ===== 固定扣款自動記帳：到了扣款日自動記一筆，不用手動 =====
+const FIXED_CATS = ['訂閱', '房租', '保費', '通訊', '其他'];
+const autoAccOf = (x) => (x.account && accById(x.account)) ? x.account : null;
+let autoBusy = false;
+async function autoPostFixed() {
+  if (!S.db || !S.loaded || autoBusy) return;
+  autoBusy = true;
+  try {
+    const subs = (S.settings.subs || []).map(x => ({ ...x }));
+    const t = todayStr(), m0 = monthOf(t), posted = [];
+    let changed = false;
+    for (const x of subs) {
+      if (!x.id) { x.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7); changed = true; }
+      if (x.auto === false || !x.day || !(Number(x.amount) > 0)) continue;
+      const acc = autoAccOf(x); if (!acc) continue;      // 沒指定扣款帳戶就不自動記
+      if (!x.since) { x.since = m0; changed = true; }   // 從開啟自動記帳的那個月開始
+      let m = x.done && x.done >= x.since ? shiftMonth(x.done, 1) : x.since;
+      for (let k = 0; m <= m0 && k < 12; k++, m = shiftMonth(m, 1)) {
+        const date = `${m}-${pad(Math.min(Number(x.day), daysIn(m)))}`;
+        if (date > t) break;
+        const cat = x.cat || '訂閱';
+        // 這個月已經手動記過同一筆（同分類、同備註）就不重複
+        const manual = allTx().some(tx => tx.type === 'expense' && monthOf(tx.date) === m && tx.category === cat && (tx.note || '') === x.name);
+        const ref = S.db.doc(`txns/r_${x.id}_${m.replace('-', '')}`);
+        if (!manual && !(await ref.get()).exists) {
+          await ref.set({ type: 'expense', amount: subTWD(x), date, account: acc, via: x.via || null, note: x.name, category: cat, auto: true, createdAt: Date.now() });
+          posted.push(x.name);
+        }
+        x.done = m; changed = true;
+      }
+    }
+    if (changed) await S.db.doc('settings/main').set({ ...S.settings, subs });
+    if (posted.length) toast('已自動記帳：' + posted.slice(0, 3).join('、') + (posted.length > 3 ? ` 等 ${posted.length} 筆` : ''));
+  } catch (e) { console.warn('自動記帳失敗', e); }
+  finally { autoBusy = false; }
+}
 async function saveSubs(list, msg) { try { await S.db.doc('settings/main').set({ ...S.settings, subs: list }); if (msg) toast(msg); } catch { toast('儲存失敗'); } }
 function renderSubs() {
   const list = S.settings.subs || [];
+  const sa = $('#subAcc'); if (sa && document.activeElement !== sa) { const v = sa.value; sa.replaceChildren(el('option', { value: '', text: '從哪裡扣款' }), ...payables().map(a => el('option', { value: a.id, text: a.name }))); sa.value = v; }
   if (document.activeElement && document.activeElement.matches('#subList .edit input, #subList .edit select')) return;
   const used = [...new Set((S.settings.subs || []).map(x => x.currency).filter(c => c && c !== 'TWD'))];
   $('#fxLbl').textContent = used.length ? '匯率 ' + used.map(c => `${CUR_NAME[c] || c} ${fxRate(c)}`).join('、') + (FX.date ? '（每天自動更新）' : '（預設值）') : '';
   const t0 = todayStr(), m0 = monthOf(t0);
   $('#subList').replaceChildren(...(list.length ? list.map((x, i) => {
-    const paid = allTx().some(t => t.type === 'expense' && monthOf(t.date) === m0 && t.category === '訂閱' && (t.note || '') === x.name);
+    const paid = allTx().some(t => t.type === 'expense' && monthOf(t.date) === m0 && t.category === (x.cat || '訂閱') && (t.note || '') === x.name);
+    const autoOn = x.auto !== false && x.day && autoAccOf(x);
+    const autoTxt = x.auto === false ? '・手動記帳' : !x.day ? '・填扣款日才能自動記帳' : !autoAccOf(x) ? '・選扣款帳戶才能自動記帳' : '・到期自動記帳';
     const del = el('button', { class: 'x', type: 'button', text: '移除' });
     const edit = el('button', { class: 'x', type: 'button', text: S.subEdit === i ? '收起' : '編輯', onclick: () => { S.subEdit = S.subEdit === i ? null : i; renderSubs(); } });
     del.addEventListener('click', () => { if (!del.classList.contains('sure')) { del.classList.add('sure'); del.textContent = '確定？'; return; } saveSubs(list.filter((_, k) => k !== i), '已移除 ' + x.name); });
     const row = el('li', { style: 'cursor:default;flex-wrap:wrap' },
       
-      el('div', { class: 'grow' }, el('div', { class: 'a', text: x.name }), el('div', { class: 'b', text: (x.currency && x.currency !== 'TWD' ? `${fmtCur(x.currency, x.amount)} ≈ ` : '') + `$${fmt.format(subTWD(x))}／月` + (x.day ? `・每月 ${x.day} 日` : '') + (x.account && accById(x.account) ? `・${x.via ? x.via + '・' : ''}${accName(x.account)}` : '') + (paid ? '・本月已記' : '') })),
-      el('button', { class: 'btn ghost', type: 'button', style: 'padding:5px 9px;font-size:12.5px', text: paid ? '再記一筆' : '記一筆', onclick: () => {
+      el('div', { class: 'grow' }, el('div', { class: 'a', text: x.name }), el('div', { class: 'b', text: ((x.cat && x.cat !== '訂閱') ? x.cat + '・' : '') + (x.currency && x.currency !== 'TWD' ? `${fmtCur(x.currency, x.amount)} ≈ ` : '') + `$${fmt.format(subTWD(x))}／月` + (x.day ? `・每月 ${x.day} 日` : '') + (x.account && accById(x.account) ? `・${x.via ? x.via + '・' : ''}${accName(x.account)}` : '') + (paid ? '・本月已記' : '')  + autoTxt})),
+      autoOn ? null : el('button', { class: 'btn ghost', type: 'button', style: 'padding:5px 9px;font-size:12.5px', text: paid ? '再記一筆' : '記一筆', onclick: () => {
         openSheet(null, x.day && monthOf(t0) === m0 ? `${m0}-${pad(Math.min(x.day, daysIn(m0)))}` : t0);
-        F.cat = '訂閱'; F.expr = String(subTWD(x)); $('#fNote').value = x.name; if (x.account && accById(x.account)) { F.acc = x.account; F.via = x.via || ''; F.accTouched = true; } renderSheet(); } }),
+        F.cat = x.cat || '訂閱'; F.expr = String(subTWD(x)); $('#fNote').value = x.name; if (x.account && accById(x.account)) { F.acc = x.account; F.via = x.via || ''; F.accTouched = true; } renderSheet(); } }),
       edit, del);
     if (S.subEdit === i) row.append(subEditor(x, i, list));
     return row;
@@ -1176,10 +1217,15 @@ function subEditor(x, i, list) {
   const day = el('input', { class: 't num', inputmode: 'numeric', value: x.day || '', placeholder: '1–31' });
   const acc = el('select', { class: 't' }, el('option', { value: '', text: '（不指定）' }), ...payables().map(a => el('option', { value: a.id, text: a.name }))); acc.value = x.account && accById(x.account) ? x.account : '';
   const via = el('select', { class: 't' }, ...VIAS.map(([v, l]) => el('option', { value: v, text: l }))); via.value = x.via || '';
+  const cat = el('select', { class: 't' }, ...FIXED_CATS.map(c => el('option', { value: c, text: c }))); cat.value = x.cat || '訂閱';
+  const auto = el('input', { type: 'checkbox' }); auto.checked = x.auto !== false;
   const save = el('button', { class: 'btn', type: 'button', text: '儲存', onclick: () => {
     const n = name.value.trim(), a = Number(String(amt.value).replace(/,/g, '')), d = Math.round(Number(day.value));
     if (!n || !(a > 0)) { toast('請填名稱和金額'); return; }
-    const nl = list.slice(); nl[i] = { ...x, name: n.slice(0, 30), amount: a, currency: cur.value, day: d >= 1 && d <= 31 ? d : null, account: acc.value || null, via: via.value || null };
+    if (auto.checked && (!(d >= 1 && d <= 31) || !acc.value)) { toast('自動記帳要填扣款日，並選從哪張卡／帳戶扣'); return; }
+    const nl = list.slice(); const wasOff = x.auto === false || !x.day || !autoAccOf(x);
+    nl[i] = { ...x, name: n.slice(0, 30), amount: a, currency: cur.value, day: d >= 1 && d <= 31 ? d : null, account: acc.value || null, via: via.value || null, cat: cat.value, auto: auto.checked };
+    if (auto.checked && wasOff) { nl[i].since = monthOf(todayStr()); delete nl[i].done; }
     S.subEdit = null; saveSubs(nl, '已更新 ' + n);
   } });
   const L = (t, e) => el('label', { class: 'small muted', style: 'display:flex;flex-direction:column;gap:3px' }, t, e);
@@ -1187,6 +1233,7 @@ function subEditor(x, i, list) {
     el('div', { class: 'grid2' }, L('名稱', name), L('扣款日', day)),
     el('div', { class: 'grid2' }, L('金額', amt), L('幣別', cur)),
     el('div', { class: 'grid2' }, L('用哪張卡／帳戶付', acc), L('支付管道', via)),
+    el('div', { class: 'grid2' }, L('分類', cat), el('div', { class: 'sb mrow0', style: 'align-items:center' }, el('span', { class: 'small', text: '每月到扣款日自動記帳' }), el('label', { class: 'switch' }, auto, el('span')))),
     el('div', { class: 'sb' }, el('span', { class: 'small muted', text: '改價格、改方案都在這裡' }), el('div', { class: 'flex' }, el('button', { class: 'btn ghost', type: 'button', text: '取消', onclick: () => { S.subEdit = null; renderSubs(); } }), save)));
 }
 function suggestBudget() {
@@ -1308,7 +1355,7 @@ async function scheduleReminders(silent) {
       list.push({ id: id++, title: '信用卡明天扣款', body: `${a.name} 明天自動扣款，記得確認扣款帳戶餘額。`, schedule: { on: { day, hour: 20, minute: 0 }, allowWhileIdle: true } });
     }
     id = 2000;
-    for (const x of (S.settings.subs || []).filter(x => x.day)) list.push({ id: id++, title: '今天有訂閱扣款', body: `${x.name} 今天扣款，記得記一筆。`, schedule: { on: { day: x.day, hour: 20, minute: 0 }, allowWhileIdle: true } });
+    for (const x of (S.settings.subs || []).filter(x => x.day)) list.push({ id: id++, title: '今天有訂閱扣款', body: x.auto !== false && x.account ? `${x.name} 今天扣款，已自動幫你記帳。` : `${x.name} 今天扣款，記得記一筆。`, schedule: { on: { day: x.day, hour: 20, minute: 0 }, allowWhileIdle: true } });
     if (list.length) await N.schedule({ notifications: list });
     await S.db.doc('settings/main').set({ ...S.settings, remind: true });
     if (!silent) toast(list.length ? `已設定 ${list.length} 個提醒` : '目前沒有可提醒的扣款日');
@@ -2119,6 +2166,7 @@ function setupFaceLock() {
   $('#faceIcon').addEventListener('click', () => tryUnlock());
   $('#lockScreen').addEventListener('click', (e) => { if (!e.target.closest('button')) tryUnlock(); });
   $('#lockPw').addEventListener('click', async () => { FaceLock.disable(); await HanCloud.auth.signOut(); location.reload(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(autoPostFixed, 1500); });
   // 離開超過 1 分鐘再回來就重新上鎖
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) lockedAt = Date.now();
@@ -2250,7 +2298,10 @@ async function start() {
   $('#subAddBtn').addEventListener('click', () => {
     const name = $('#subName').value.trim(), amount = numIn('#subAmt'), day = Math.round(numIn('#subDay'));
     if (!name || !(amount > 0)) { toast('請填名稱和金額'); return; }
-    saveSubs([...(S.settings.subs || []), { name: name.slice(0, 30), amount, currency: $('#subCur').value, day: day >= 1 && day <= 31 ? day : null }], '已加入 ' + name);
+    const acc = $('#subAcc').value || null, okDay = day >= 1 && day <= 31;
+    const item = { id: Date.now().toString(36), name: name.slice(0, 30), amount, currency: $('#subCur').value, day: okDay ? day : null, account: acc, cat: '訂閱', auto: !!(okDay && acc), since: monthOf(todayStr()) };
+    saveSubs([...(S.settings.subs || []), item], '已加入 ' + name + (item.auto ? '，到扣款日會自動記帳' : ''));
+    setTimeout(autoPostFixed, 500);
     $('#subName').value = ''; $('#subAmt').value = ''; $('#subDay').value = '';
   });
   $('#useSuggest').addEventListener('click', () => { $('#setBudget').value = suggestBudget().living; });
@@ -2306,6 +2357,7 @@ async function boot(sess) {
     if (!lastExpenseAcc) { const c = sorted(S.accounts).find(a => typeOf(a) === 'card'); lastExpenseAcc = c ? c.id : null; }
     subscribeRecent(); render();
     if (S.settings.remind) scheduleReminders(true);
+    setTimeout(autoPostFixed, 1500);
   }, () => status('帳戶資料讀不到。'));
   db.doc('settings/main').onSnapshot(snap => { if (snap.exists) S.settings = { ...S.settings, ...snap.data() }; render(); }, () => {});
   subscribeMonth();
