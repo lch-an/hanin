@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="han in">
@@ -23,7 +23,7 @@
   :root{--bg:#141412;--panel:#1f1e1b;--ink:#efebe4;--muted:#a19b92;--line:#302e2a;--soft:#272522;--accent:#7cc3a8;--accent2:#22322c;--exp:#ef8d70;--inc:#80d1a0;--warn:#e0b25a;--shadow:none}
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;touch-action:manipulation;-webkit-text-size-adjust:100%}
 button{font:inherit;color:inherit}
 .wrap{max-width:720px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(130px + env(safe-area-inset-bottom))}
 .num{font-variant-numeric:tabular-nums}
@@ -324,7 +324,7 @@ body{background:transparent}
 .sheet,.modal .box{max-width:402px}
 #appWrap > section,.sheet .body,.modal .box > *,#authScreen > *{zoom:var(--z,1)}
 .wrap,.sheet .body,.modal .box{overflow-x:hidden}
-.lockscreen{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,12,.25);-webkit-backdrop-filter:blur(30px) saturate(1.4);backdrop-filter:blur(30px) saturate(1.4)}
+.lockscreen{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:calc(14px + env(safe-area-inset-top));gap:14px;background:rgba(10,12,12,.25);-webkit-backdrop-filter:blur(30px) saturate(1.4);backdrop-filter:blur(30px) saturate(1.4)}
 .lockscreen[hidden]{display:none}
 .lock-title{font-size:20px;font-weight:700;margin-top:8px}
 .lock-msg{font-size:14px;color:var(--muted);min-height:1.4em}
@@ -571,7 +571,7 @@ body{background:transparent}
 <div class="modal" id="pModal" hidden><div class="box" id="pBox"></div></div>
 <!-- Face ID 解鎖 -->
 <div class="lockscreen" id="lockScreen" hidden>
-  <div class="ios-faceid-prompt" data-variant="hud">
+  <div class="ios-faceid-prompt" data-variant="island">
     <svg class="ios-faceid" id="faceIcon" data-state="idle" viewBox="0 0 64 64" aria-hidden="true">
     <g class="ios-faceid__brackets"><path d="M4 18V12a8 8 0 0 1 8-8h6"/><path d="M46 4h6a8 8 0 0 1 8 8v6"/><path d="M60 46v6a8 8 0 0 1-8 8h-6"/><path d="M18 60h-6a8 8 0 0 1-8-8v-6"/></g>
     <g class="ios-faceid__face"><g class="ios-faceid__look"><path d="M23 22v5M41 22v5"/><path d="M32 22v13h-3"/><path d="M23 43q9 7 18 0"/></g></g>
@@ -1269,7 +1269,7 @@ function subscribeRecent() {
 const Native = (() => {
   const C = window.Capacitor, isNative = !!(C && C.isNativePlatform && C.isNativePlatform());
   const get = (n) => { if (!isNative) return undefined; try { return (C.Plugins && C.Plugins[n]) || (C.registerPlugin ? C.registerPlugin(n) : undefined); } catch { return undefined; } };
-  return { isNative, prefs: get('Preferences'), haptics: get('Haptics'), notif: get('LocalNotifications'), share: get('Share'), fs: get('Filesystem') };
+  return { isNative, prefs: get('Preferences'), haptics: get('Haptics'), notif: get('LocalNotifications'), share: get('Share'), fs: get('Filesystem'), bio: get('BiometricAuthNative') };
 })();
 const haptic = () => { try { Native.haptics && Native.haptics.impact({ style: 'LIGHT' }); } catch {} };
 
@@ -2053,10 +2053,15 @@ const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/
 const FaceLock = {
   key: () => 'faceid-' + S.uid,
   credId() { try { return localStorage.getItem(this.key()); } catch { return null; } },
+  // App 版：直接用 iPhone 的 Face ID（和 Apple Pay 一樣，不會問通行密鑰）
+  // 網頁版：瀏覽器只能用「通行密鑰」來叫出 Face ID，系統一定會先跳出詢問視窗
+  native: () => !!(Native.isNative && Native.bio),
   async supported() {
+    if (this.native()) { try { const r = await Native.bio.checkBiometry(); return !!r.isAvailable; } catch { return false; } }
     try { return !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch { return false; }
   },
   async enable() {
+    if (this.native()) { await this.nativeAuth('開啟 Face ID 解鎖'); try { localStorage.setItem(this.key(), 'native'); } catch {} return; }
     const cred = await navigator.credentials.create({ publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       rp: { name: 'han in 輸入記帳' },
@@ -2068,8 +2073,13 @@ const FaceLock = {
     try { localStorage.setItem(this.key(), b64u(cred.rawId)); } catch {}
   },
   disable() { try { localStorage.removeItem(this.key()); } catch {} },
+  async nativeAuth(reason) {
+    try { await Native.bio.authenticate({ reason, cancelTitle: '取消', allowDeviceCredential: false, iosFallbackTitle: '' }); }
+    catch (e) { const err = new Error((e && e.message) || '辨識失敗'); err.name = 'NotAllowedError'; throw err; }
+  },
   async verify() {
     const id = this.credId(); if (!id) return true;
+    if (id === 'native' || this.native()) return this.nativeAuth('解鎖 han in 輸入記帳');
     await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), allowCredentials: [{ type: 'public-key', id: unb64u(id) }], userVerification: 'required', timeout: 60000 } });
     return true;
   },
