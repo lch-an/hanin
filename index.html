@@ -83,12 +83,16 @@ nav.tabs{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 nav.tabs a{-webkit-user-drag:none;-webkit-touch-callout:none}
 nav.tabs .in{position:relative}
 nav.tabs a,nav.tabs .fab{position:relative;z-index:1}
-nav.tabs a.near{color:var(--accent)}
-.tab-lens{position:absolute;top:2px;bottom:2px;left:0;width:80px;border-radius:28px;z-index:0;pointer-events:none;opacity:0;
+.glens{position:absolute;top:2px;bottom:2px;left:0;width:80px;border-radius:999px;z-index:0;pointer-events:none;opacity:0;
   transition:transform .42s cubic-bezier(.25,1.35,.45,1),width .3s ease,opacity .2s;will-change:transform}
-.tab-lens.show{opacity:1}
-nav.tabs.dragging .tab-lens{transition:width .15s ease,opacity .2s}
-nav.tabs.dragging{transform:translateX(-50%) scale(1.02);transition:transform .2s}
+.glens.show{opacity:1}
+.gdragging .glens{transition:width .15s ease,opacity .2s}
+.gdragging{touch-action:none}
+.gnear{color:var(--accent)!important}
+.gseg{position:relative;display:flex;border-radius:999px;padding:3px;gap:2px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.gseg > button,.gseg > a{position:relative;z-index:1;flex:1;border:0;background:transparent!important;box-shadow:none!important;color:var(--ios-glass-label, var(--ink));font-weight:600;padding:9px 6px;border-radius:999px;cursor:pointer;font-size:14.5px;text-align:center;text-decoration:none;white-space:nowrap;-webkit-user-drag:none}
+.gseg > .on{font-weight:700}
+#typeSeg > button.on.e{color:var(--exp)} #typeSeg > button.on.i{color:var(--inc)}
 nav.tabs a .i{display:block;font-size:20px;line-height:1.3}
 nav.tabs a.on{color:var(--accent)}
 nav.tabs .fab{flex:0 0 76px;display:flex;justify-content:center}
@@ -199,6 +203,11 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .grid2 label,.grid1 label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
 .edit input.t,.edit select.t{background:var(--panel)}
 
+.atabrow{display:flex;gap:8px;align-items:center;margin:4px 0 10px}
+.atabs{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.atabs::-webkit-scrollbar{display:none}
+.atabs > button{flex:1 0 auto;padding:9px 8px;font-size:14px}
+.aadd{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:0;font-size:20px;color:var(--ios-glass-label, var(--ink));cursor:pointer}
 .btabs{display:flex;align-items:flex-end;gap:2px;overflow-x:auto;scrollbar-width:none;padding:6px 6px 0;background:var(--line);border-radius:16px 16px 0 0}
 .btabs::-webkit-scrollbar{display:none}
 .btab{flex:0 0 auto;display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted);padding:9px 12px 10px;border-radius:12px 12px 0 0;cursor:pointer;font-size:13.5px;font-weight:500;position:relative;max-width:11em}
@@ -239,6 +248,8 @@ input.t:focus,select.t:focus{border-color:var(--accent)}
 .cat{flex:0 0 auto;flex-direction:row!important;border:1px solid var(--line)!important;border-radius:999px!important;padding:6px 12px!important;font-size:13.5px!important;color:var(--ink)!important;background:var(--panel)!important}
 .cat.on{background:var(--c)!important;border-color:var(--c)!important;color:#fff!important;font-weight:700}
 .cat .nl{margin-left:4px;font-size:10px}
+.aibox .flex{gap:8px}.aibox .flex .t{flex:1;min-width:0}.aibox a{color:var(--accent)}
+.cat.more,.accs button.more{border-style:dashed!important;color:var(--muted)!important;background:transparent!important}
 .cat.on .nl{color:#fff}
 .dotc{width:10px;height:10px;border-radius:50%;flex:0 0 10px}
 .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:40;white-space:nowrap}
@@ -310,6 +321,8 @@ body{background:transparent}
 .ios-surface:not(.dark) .ios-bg::after{opacity:.45}
 .wrap{max-width:402px}
 .sheet,.modal .box{max-width:402px}
+#appWrap > section,.sheet .body,.modal .box > *,#authScreen > *{zoom:var(--z,1)}
+.wrap,.sheet .body,.modal .box{overflow-x:hidden}
 .lockscreen{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,12,.25);-webkit-backdrop-filter:blur(30px) saturate(1.4);backdrop-filter:blur(30px) saturate(1.4)}
 .lockscreen[hidden]{display:none}
 .lock-title{font-size:20px;font-weight:700;margin-top:8px}
@@ -395,7 +408,7 @@ body{background:transparent}
 
   <!-- 明細 -->
   <section id="v-ledger" hidden>
-    <div class="seg vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
+    <div class="gseg ios-glass vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
     <div class="top"><h1>明細</h1><div class="m"><button class="ios-glass" data-m="-1" aria-label="上個月">‹</button><b class="mLbl"></b><button class="ios-glass" data-m="1" aria-label="下個月">›</button></div></div>
     <div class="card"><div class="cal" id="cal"></div><div class="small muted" style="text-align:center;margin-top:8px">點日期看當天明細，再點一次同一天就能新增</div></div>
     <div class="card">
@@ -410,7 +423,7 @@ body{background:transparent}
 
   <!-- 統計 -->
   <section id="v-stats" hidden>
-    <div class="seg vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
+    <div class="gseg ios-glass vsw"><a href="#ledger" data-sw="ledger">明細</a><a href="#stats" data-sw="stats">統計</a></div>
     <div class="top"><h1>統計</h1><div class="m"><button class="ios-glass" data-m="-1" aria-label="上個月">‹</button><b class="mLbl"></b><button class="ios-glass" data-m="1" aria-label="下個月">›</button></div></div>
     <div class="card">
       <div class="stats3" style="grid-template-columns:1fr 1fr 1fr">
@@ -441,7 +454,7 @@ body{background:transparent}
     <div class="card" id="uiCard"><h2>介面設定 <small>只影響這台裝置</small></h2>
       <div class="sb mrow0"><div><b style="font-size:14px">首頁最近紀錄</b><div class="small muted">打開 App 時先看清單還是月曆</div></div><div class="seg mini" id="prefHome"><button data-v="list" type="button">清單</button><button data-v="cal" type="button">月曆</button></div></div>
       <div class="sb mrow0"><div><b style="font-size:14px">資產頁預設分頁</b></div><select class="t" id="prefAsset" style="max-width:130px"></select></div>
-      <div class="sb mrow0"><div><b style="font-size:14px">文字大小</b></div><div class="seg mini" id="prefZoom"><button data-v="1" type="button">標準</button><button data-v="1.12" type="button">大</button><button data-v="1.25" type="button">特大</button></div></div>
+      <div class="sb mrow0"><div><b style="font-size:14px">文字大小</b></div><div class="seg mini" id="prefZoom"><button data-v="0.9" type="button">小</button><button data-v="1" type="button">標準</button><button data-v="1.12" type="button">大</button></div></div>
       <div class="sb mrow0" id="faceRow" hidden><div><b style="font-size:14px">Face ID 解鎖</b><div class="small muted">打開 App 或離開超過 1 分鐘回來時，要先通過 Face ID。辨識在手機上完成，不會上傳</div></div><label class="switch"><input type="checkbox" id="prefFace"><span></span></label></div>
       <div class="sb mrow0"><div><b style="font-size:14px">隱藏金額</b><div class="small muted">在外面打開 App 時，金額先模糊處理，點一下才顯示</div></div><label class="switch"><input type="checkbox" id="prefHide"><span></span></label></div>
     </div>
@@ -518,7 +531,6 @@ body{background:transparent}
 </div>
 
 <nav class="tabs ios-glass" id="appNav" hidden><div class="in">
-  <span class="tab-lens ios-glass-clear" id="tabLens" aria-hidden="true"></span>
   <a href="#home" data-v="home" draggable="false">首頁</a>
   <a href="#ledger" data-v="ledger" draggable="false">明細</a>
   <span class="fab"><button id="fab" class="ios-glass-prominent" aria-label="記一筆">＋</button></span>
@@ -531,7 +543,7 @@ body{background:transparent}
   <div class="grab"></div>
   <div class="sb" style="padding:0 14px 6px"><b id="sheetTitle">記一筆</b><button class="x" id="closeSheet" type="button">關閉</button></div>
   <div class="body">
-    <div class="seg" id="typeSeg"><button data-t="expense" class="e">支出</button><button data-t="income" class="i">收入</button><button data-t="transfer">轉帳／繳卡費</button></div>
+    <div class="gseg ios-glass" id="typeSeg"><button data-t="expense" class="e">支出</button><button data-t="income" class="i">收入</button><button data-t="transfer">轉帳／繳卡費</button></div>
     <div class="tpl" id="tpl"></div>
     <div id="catBox"><div class="cats" id="cats"></div></div>
     <div id="viaBox"><div class="lbl">怎麼付</div><div class="accs vias" id="vias"></div></div>
@@ -685,11 +697,14 @@ function evalExpr(s) {
 }
 function renderSheet() {
   $$('#typeSeg button').forEach(b => b.classList.toggle('on', b.dataset.t === F.type));
+  if ($('#typeSeg')._glass) requestAnimationFrame(() => $('#typeSeg')._glass.sync());
   const isT = F.type === 'transfer';
   $('#catBox').hidden = isT; $('#toBox').hidden = !isT; $('#tpl').hidden = isT || !!F.id;
   if (!isT) {
     const list = CATS[F.type]; if (!list.some(c => c[0] === F.cat)) F.cat = list[0][0];
-    $('#cats').replaceChildren(...list.map(([n, i, c]) => el('button', { class: 'cat' + (n === F.cat ? ' on' : ''), style: `--c:${c}`, type: 'button', onclick: () => { F.cat = n; if (F.type === 'expense' && !F.accTouched) { const b = topAccForCat(n); if (b) { F.acc = b.acc; F.via = b.via; } } renderSheet(); } }, el('span', { text: n }), F.type === 'expense' && nonLiving().has(n) ? el('span', { class: 'nl', text: '固定支出' }) : null)));
+    const shown = F.catsOpen ? list : topCats(F.type, list, 7, F.cat);
+    const more = list.length > shown.length || F.catsOpen ? el('button', { class: 'cat more', type: 'button', text: F.catsOpen ? '收起' : `更多 ${list.length - shown.length}`, onclick: () => { F.catsOpen = !F.catsOpen; renderSheet(); } }) : null;
+    $('#cats').replaceChildren(...shown.map(([n, i, c]) => el('button', { class: 'cat' + (n === F.cat ? ' on' : ''), style: `--c:${c}`, type: 'button', onclick: () => { F.cat = n; if (F.type === 'expense' && !F.accTouched) { const b = topAccForCat(n); if (b) { F.acc = b.acc; F.via = b.via; } } renderSheet(); } }, el('span', { text: n }), F.type === 'expense' && nonLiving().has(n) ? el('span', { class: 'nl', text: '固定支出' }) : null)), more);
   }
   $('#viaBox').hidden = F.type !== 'expense';
   if (F.type !== 'expense') F.via = '';
@@ -699,7 +714,9 @@ function renderSheet() {
   if (F.type === 'expense' && F.via) { const bound = srcs.filter(a => (a.wallets || []).includes(F.via)); srcs = bound.length ? bound : srcs.filter(a => typeOf(a) === 'card'); }
   $('#accLbl').textContent = F.type === 'expense' ? (F.via ? `${F.via} 綁的哪張卡` : '從哪裡付（預設現金，轉帳或自動扣款可以改）') : F.type === 'income' ? '入帳到' : '從哪裡轉出';
   if (!srcs.some(a => a.id === F.acc)) F.acc = (srcs[0] || {}).id || null;
-  $('#accs').replaceChildren(...srcs.map(a => el('button', { type: 'button', class: a.id === F.acc ? 'on' : '', text: a.name, onclick: () => { F.acc = a.id; F.accTouched = true; renderSheet(); } })));
+  const accShown = F.accsOpen || srcs.length <= 6 ? srcs : (() => { const top = srcs.slice(0, 5); const cur = srcs.find(a => a.id === F.acc); return cur && !top.includes(cur) ? [...top.slice(0, 4), cur] : top; })();
+  $('#accs').replaceChildren(...accShown.map(a => el('button', { type: 'button', class: a.id === F.acc ? 'on' : '', text: a.name, onclick: () => { F.acc = a.id; F.accTouched = true; renderSheet(); } })),
+    srcs.length > 6 ? el('button', { type: 'button', class: 'more', text: F.accsOpen ? '收起' : `更多 ${srcs.length - accShown.length}`, onclick: () => { F.accsOpen = !F.accsOpen; renderSheet(); } }) : '');
   if (isT) {
     const tos = transferables().filter(a => a.id !== F.acc);
     if (!tos.some(a => a.id === F.to)) F.to = ((tos.find(a => typeOf(a) === 'card')) || tos[0] || {}).id || null;
@@ -741,6 +758,16 @@ function smartPicks(type, limit) {
     out.push({ ...g, med, steady, score: g.score * (g.t.note ? 1.15 : 1) });
   }
   return out.sort((x, y) => y.score - x.score).slice(0, limit);
+}
+// 最常用的分類排前面（近 90 天的次數），選到的那一個一定會顯示
+function topCats(type, list, n, cur) {
+  const cnt = new Map(), since = Date.now() - 90 * 86400000;
+  for (const t of allTx()) if (t.type === type && (t.createdAt || Date.parse(t.date) || 0) >= since) cnt.set(t.category, (cnt.get(t.category) || 0) + 1);
+  const order = list.map((c, i) => [c, i]).sort((a, b) => (cnt.get(b[0][0]) || 0) - (cnt.get(a[0][0]) || 0) || a[1] - b[1]).map(x => x[0]);
+  let top = order.slice(0, n);
+  const curC = list.find(c => c[0] === cur);
+  if (curC && !top.includes(curC)) top = [...top.slice(0, n - 1), curC];
+  return list.filter(c => top.includes(c));
 }
 function topAccForCat(cat) {
   const c = new Map();
@@ -787,6 +814,7 @@ function openSheet(tx, presetDate) {
   $('#delTx').classList.remove('sure'); $('#delTx').textContent = '刪除';
   renderSheet();
   $('#sheet').classList.add('on'); $('#backdrop').classList.add('on');
+  setTimeout(() => $('#typeSeg')._glass && $('#typeSeg')._glass.sync(), 60);
 }
 function closeSheet() { $('#sheet').classList.remove('on'); $('#backdrop').classList.remove('on'); }
 async function submit() {
@@ -1042,17 +1070,16 @@ function renderAssets() {
   if (S.assetTab !== 'all' && !present.includes(S.assetTab)) S.assetTab = 'all';
   const sumOf = (g) => S.accounts.filter(a => typeOf(a) === g && a.inNW !== false).reduce((s, a) => s + valueOf(a), 0);
   const pick = (g) => { S.assetTab = g; editingId = null; try { localStorage.setItem('assetTab', g); } catch {} renderAssets(); };
-  const strip = el('div', { class: 'btabs', role: 'tablist' });
+  const SHORT = { all: '總覽', bank: '銀行', cash: '現金', card: '信用卡', tw_stock: '台股', us_stock: '美股', insurance: '保險', receivable: '應收', loan: '貸款', other: '其他' };
+  const seg = el('div', { class: 'gseg ios-glass atabs', role: 'tablist', id: 'assetTabs' });
   for (const g of ['all', ...present]) {
-    const on = g === S.assetTab, ty = TYPES[g];
-    const n = g === 'all' ? S.accounts.length : S.accounts.filter(a => typeOf(a) === g).length;
-    strip.append(el('button', { class: 'btab' + (on ? ' on' : ''), role: 'tab', 'aria-selected': on ? 'true' : 'false', type: 'button', onclick: () => pick(g) },
-      el('span', { class: 'bl', text: g === 'all' ? '總覽' : ty.label }), el('span', { class: 'bn', text: n })));
+    const on = g === S.assetTab;
+    seg.append(el('button', { class: on ? 'on' : '', role: 'tab', 'aria-selected': on ? 'true' : 'false', type: 'button', 'data-g': g, title: g === 'all' ? '總覽' : TYPES[g].label, text: SHORT[g] || TYPES[g].label, onclick: () => pick(g) }));
   }
-  strip.append(el('button', { class: 'btab add', type: 'button', 'aria-label': '新增帳戶', text: '＋', onclick: () => $('#addAccBtn').click() }));
+  const strip = el('div', { class: 'atabrow' }, seg, el('button', { class: 'aadd ios-glass', type: 'button', 'aria-label': '新增帳戶', text: '＋', onclick: () => $('#addAccBtn').click() }));
   const panel = el('div', { class: 'bpanel' });
   box.append(strip, panel);
-  requestAnimationFrame(() => { const on = strip.querySelector('.btab.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+  glassDrag(seg, { items: () => [...seg.querySelectorAll('button')], pick: (b) => pick(b.dataset.g), key: 'assets' });
   if (S.assetTab === 'all') {
     const tot = present.filter(g => !TYPES[g].liab).reduce((s, g) => s + Math.max(0, sumOf(g)), 0) || 1;
     const ul = el('ul', { class: 'list' });
@@ -1212,6 +1239,7 @@ function route() {
   $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === (view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view)));
   requestAnimationFrame(() => moveLens());
   $$('.vsw a').forEach(a => a.classList.toggle('on', a.dataset.sw === view));
+  requestAnimationFrame(() => $$('.vsw').forEach(v => v._glass && v._glass.sync()));
   render(); window.scrollTo(0, 0);
 }
 
@@ -1624,6 +1652,32 @@ function openCardEditor(card) {
     rows.push(get); rulesBox.append(wrap);
   };
   (card && card.card_rewards && card.card_rewards.length ? card.card_rewards.slice().sort((a, b) => b.rate - a.rate) : [{}]).forEach(addRule);
+  // AI 搜尋：輸入卡名 → Gemini 上網查 → 預先填好，管理員核對後再儲存
+  const aiQ = el('input', { class: 't', id: 'aiCardQ', value: card ? card.name : '', placeholder: '輸入卡名，例如 CUBE卡、Richart卡' });
+  const aiMsg = el('div', { class: 'small', id: 'aiCardMsg', style: 'min-height:1.2em' });
+  const aiSrc = el('div', { class: 'small muted', id: 'aiCardSrc' });
+  const aiGo = el('button', { class: 'btn', type: 'button', id: 'aiCardGo', text: 'AI 搜尋', onclick: async () => {
+    const q = aiQ.value.trim(); if (q.length < 2) { aiMsg.textContent = '請輸入卡名'; return; }
+    aiGo.disabled = true; aiGo.textContent = '搜尋中…'; aiMsg.style.color = ''; aiMsg.textContent = '正在查官網，約 10～30 秒'; aiSrc.replaceChildren();
+    try {
+      const r = await HanCloud.admin.lookupCard(q, bankName(bank));
+      const c = r.card || {};
+      if (!c.found) { aiMsg.style.color = 'var(--exp)'; aiMsg.textContent = '找不到這張卡的回饋資料，換個名稱試試，或手動輸入'; return; }
+      if (c.name) name.value = c.name;
+      if (c.annual_fee) fee.value = c.annual_fee;
+      if (c.source_url) url.value = c.source_url;
+      rulesBox.replaceChildren(); rows.length = 0; c.rules.forEach(addRule);
+      [name, fee, url].forEach(x => x.value && x.classList.add('auto'));
+      aiMsg.style.color = 'var(--warn)';
+      aiMsg.textContent = `已帶入 ${c.rules.length} 條規則。${r.disclaimer || 'AI 辨識不保證完全正確，請對照官網確認後再儲存。'}`;
+      if (r.sources && r.sources.length) aiSrc.replaceChildren('參考來源：', ...r.sources.map((x, i) => el('a', { href: x.url, target: '_blank', rel: 'noopener', text: (i ? '、' : '') + (x.title || '來源 ' + (i + 1)) })));
+    } catch (e) { aiMsg.style.color = 'var(--exp)'; aiMsg.textContent = e.message || String(e); }
+    finally { aiGo.disabled = false; aiGo.textContent = 'AI 搜尋'; }
+  } });
+  const aiBox = el('div', { class: 'edit aibox', style: 'margin-top:8px' },
+    el('b', { style: 'font-size:14px', text: '讓 AI 幫你查' }),
+    el('div', { class: 'small muted', style: 'margin:2px 0 6px', text: '由 Google Gemini 上網搜尋官網權益並預先填好。AI 辨識不保證完全正確，請務必對照官網確認後再儲存。' }),
+    el('div', { class: 'flex' }, aiQ, aiGo), aiMsg, aiSrc);
   const msg = el('div', { class: 'small', style: 'color:var(--exp);min-height:1.2em' });
   const save = el('button', { class: 'btn', type: 'button', text: '儲存', onclick: async () => {
     const rules = rows.map(g => g());
@@ -1642,6 +1696,7 @@ function openCardEditor(card) {
   } }) : null;
   put(box,
     el('div', { class: 'sb' }, el('b', { text: (card ? '編輯' : '新增') + '卡片・' + bankName(bank) }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
+    aiBox,
     el('div', { class: 'edit', style: 'margin-top:8px' },
       el('div', { class: 'grid2' }, name, active),
       el('div', { class: 'grid2' }, fee, url)),
@@ -1836,9 +1891,12 @@ const PREF = {
   get(k, d) { try { const v = localStorage.getItem('pref-' + k); return v === null ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('pref-' + k, v); } catch {} },
 };
+function zoomPref() { const v = PREF.get('zoom', '1'); return v === '0.9' ? 0.9 : (v === '1.12' || v === '1.25') ? 1.12 : 1; }
 function applyPrefs() {
-  const z = Number(PREF.get('zoom', '1')) || 1;
-  document.documentElement.style.zoom = z === 1 ? '' : String(z);
+  const z = zoomPref();
+  // 只縮放內容，不縮放外框：外框寬度固定在手機寬度內，所以放大也不會超出畫面
+  document.documentElement.style.zoom = '';
+  document.documentElement.style.setProperty('--z', String(z));
   document.body.classList.toggle('hideamt', PREF.get('hide', '0') === '1');
 }
 function renderMe() {
@@ -1849,7 +1907,7 @@ function renderMe() {
   $('#meAvatar').textContent = (name || email || '?').trim().slice(0, 1).toUpperCase();
   if (document.activeElement !== $('#nameIn')) $('#nameIn').value = name;
   $$('#prefHome button').forEach(b => b.classList.toggle('on', b.dataset.v === S.homeView));
-  const z = PREF.get('zoom', '1'); $$('#prefZoom button').forEach(b => b.classList.toggle('on', b.dataset.v === z));
+  const z = String(zoomPref()); $$('#prefZoom button').forEach(b => b.classList.toggle('on', b.dataset.v === z));
   $('#prefHide').checked = PREF.get('hide', '0') === '1';
   const sel = $('#prefAsset');
   if (!sel.options.length) sel.append(el('option', { value: 'all', text: '總覽' }), ...Object.entries(TYPES).map(([k, t]) => el('option', { value: k, text: t.label })));
@@ -1881,53 +1939,54 @@ function setupMe() {
   applyPrefs();
 }
 
-// ===== 分頁列：液態玻璃鏡片，可以按住左右拖動切換 =====
-let lensX = 0, lensDrag = null;
-function lensTarget() { return $('nav.tabs a.on'); }
-function placeLens(x, w, sx = 1, sy = 1) {
-  const L = $('#tabLens'); if (!L) return;
-  L.style.width = w + 'px';
-  L.style.transform = `translateX(${x}px) scale(${sx},${sy})`;
-  L.classList.add('show'); lensX = x;
-}
-function moveLens() {
-  const a = lensTarget(), nav = $('#appNav');
-  if (!a || !nav || nav.hidden) return;
-  placeLens(a.offsetLeft, a.offsetWidth);
-}
-function setupTabDrag() {
-  const nav = $('#appNav'), tabs = () => $$('nav.tabs a');
-  const nearest = (cx) => { let best = null, d = 1e9; for (const a of tabs()) { const c = a.offsetLeft + a.offsetWidth / 2, dd = Math.abs(c - cx); if (dd < d) { d = dd; best = a; } } return best; };
-  nav.addEventListener('pointerdown', (e) => {
-    const a = e.target.closest('nav.tabs a'); if (!a) return;
+// ===== 液態玻璃鏡片：分頁列、資產分頁、記一筆的類型切換都可以按住左右拖動 =====
+// track：放選項和鏡片的容器；items()：可選的元素；pick(el)：選定時要做的事
+const GLASS = new Set(), GLASS_X = {};
+window.addEventListener('resize', () => { for (const g of GLASS) { if (!g.track.isConnected) GLASS.delete(g); else g.sync(); } });
+function glassDrag(track, { items, pick, onClass = 'on', key }) {
+  if (track._glass) { track._glass.items = items; track._glass.pick = pick; track._glass.sync(); return track._glass; }
+  let lens = track.querySelector(':scope > .glens');
+  if (!lens) { lens = el('span', { class: 'glens ios-glass-clear', 'aria-hidden': 'true' }); track.prepend(lens); }
+  const g = { items, pick, drag: null, track };
+  const place = (x, w, sx = 1, sy = 1) => { if (key && sx === 1) GLASS_X[key] = [x, w]; lens.style.width = w + 'px'; lens.style.transform = `translateX(${x}px) scale(${sx},${sy})`; lens.classList.add('show'); };
+  g.sync = () => { const on = g.items().find(e => e.classList.contains(onClass)); if (!on || !track.offsetParent) { if (!on) lens.classList.remove('show'); return; } place(on.offsetLeft, on.offsetWidth); };
+  const nearest = (cx) => { let best = null, d = 1e9; for (const e of g.items()) { const c = e.offsetLeft + e.offsetWidth / 2, dd = Math.abs(c - cx); if (dd < d) { d = dd; best = e; } } return best; };
+  track.addEventListener('pointerdown', (e) => {
+    const it = g.items().find(x => x.contains(e.target)); if (!it) return;
     if (e.pointerType === 'mouse') e.preventDefault();
-    const box = nav.querySelector('.in').getBoundingClientRect();
-    lensDrag = { id: e.pointerId, startX: e.clientX, left: box.left, moved: false, lastX: e.clientX, lastT: performance.now(), v: 0, w: a.offsetWidth, near: a };
+    const box = track.getBoundingClientRect();
+    g.drag = { id: e.pointerId, startX: e.clientX, left: box.left - track.scrollLeft, moved: false, lastX: e.clientX, lastT: performance.now(), v: 0, w: it.offsetWidth, near: it };
   });
-  nav.addEventListener('pointermove', (e) => {
-    if (!lensDrag || e.pointerId !== lensDrag.id) return;
-    const dx = e.clientX - lensDrag.startX;
-    if (!lensDrag.moved && Math.abs(dx) < 6) return;
-    if (!lensDrag.moved) { lensDrag.moved = true; nav.classList.add('dragging'); try { nav.setPointerCapture(e.pointerId); } catch {} }
-    const now = performance.now(); lensDrag.v = (e.clientX - lensDrag.lastX) / Math.max(1, now - lensDrag.lastT); lensDrag.lastX = e.clientX; lensDrag.lastT = now;
-    const inner = nav.querySelector('.in'), cx = Math.min(Math.max(e.clientX - lensDrag.left, lensDrag.w / 2), inner.offsetWidth - lensDrag.w / 2);
-    // 拖動時鏡片會依速度拉長、變扁，像液體
-    const stretch = Math.min(Math.abs(lensDrag.v) * 0.35, 0.35);
-    placeLens(cx - lensDrag.w / 2, lensDrag.w, 1.12 + stretch, 1.08 - stretch * 0.4);
+  track.addEventListener('pointermove', (e) => {
+    const d = g.drag; if (!d || e.pointerId !== d.id) return;
+    if (!d.moved && Math.abs(e.clientX - d.startX) < 6) return;
+    if (!d.moved) { d.moved = true; track.classList.add('gdragging'); try { track.setPointerCapture(e.pointerId); } catch {} }
+    const now = performance.now(); d.v = (e.clientX - d.lastX) / Math.max(1, now - d.lastT); d.lastX = e.clientX; d.lastT = now;
+    const cx = Math.min(Math.max(e.clientX - d.left, d.w / 2), track.scrollWidth - d.w / 2);
+    const st = Math.min(Math.abs(d.v) * 0.35, 0.35);
+    place(cx - d.w / 2, d.w, 1.12 + st, 1.08 - st * 0.4);
     const n = nearest(cx);
-    if (n !== lensDrag.near) { tabs().forEach(t => t.classList.toggle('near', t === n)); lensDrag.near = n; haptic(); }
+    if (n && n !== d.near) { g.items().forEach(t => t.classList.toggle('gnear', t === n)); d.near = n; d.w = n.offsetWidth; haptic(); }
   });
   const end = (e) => {
-    if (!lensDrag || (e && e.pointerId !== lensDrag.id)) return;
-    const d = lensDrag; lensDrag = null; nav.classList.remove('dragging'); tabs().forEach(t => t.classList.remove('near'));
+    const d = g.drag; if (!d || (e && e.pointerId !== d.id)) return;
+    g.drag = null; track.classList.remove('gdragging'); g.items().forEach(t => t.classList.remove('gnear'));
     if (!d.moved) return;
-    d.suppressClick = true; nav._suppress = Date.now();
-    if (d.near && location.hash !== d.near.getAttribute('href')) location.hash = d.near.getAttribute('href');
-    else moveLens();
+    track._suppress = Date.now();
+    if (d.near && !d.near.classList.contains(onClass)) g.pick(d.near); else g.sync();
   };
-  nav.addEventListener('pointerup', end); nav.addEventListener('pointercancel', end);
-  nav.addEventListener('click', (e) => { if (nav._suppress && Date.now() - nav._suppress < 400 && e.target.closest('nav.tabs a')) { e.preventDefault(); } }, true);
-  window.addEventListener('resize', moveLens);
+  track.addEventListener('pointerup', end); track.addEventListener('pointercancel', end);
+  track.addEventListener('click', (e) => { if (track._suppress && Date.now() - track._suppress < 400) { e.preventDefault(); e.stopPropagation(); } }, true);
+  track._glass = g; GLASS.add(g);
+  if (key && GLASS_X[key]) { const [x, w] = GLASS_X[key]; lens.style.transition = 'none'; lens.style.width = w + 'px'; lens.style.transform = `translateX(${x}px)`; lens.classList.add('show'); void lens.offsetWidth; lens.style.transition = ''; }
+  requestAnimationFrame(() => g.sync());
+  return g;
+}
+function moveLens() { const t = $('nav.tabs .in'); if (t && t._glass) t._glass.sync(); }
+function setupTabDrag() {
+  glassDrag($('nav.tabs .in'), { items: () => $$('nav.tabs a'), pick: (a) => { location.hash = a.getAttribute('href'); } });
+  glassDrag($('#typeSeg'), { items: () => $$('#typeSeg button'), pick: (b) => { F.type = b.dataset.t; renderSheet(); } });
+  $$('.vsw').forEach(v => glassDrag(v, { items: () => [...v.querySelectorAll('a')], pick: (a) => { location.hash = a.getAttribute('href'); } }));
 }
 
 // ===== iOS 外觀：深色模式跟系統 =====
@@ -1973,11 +2032,14 @@ let lockedAt = 0, unlocking = false;
 function showLock() {
   if (!S.uid || !FaceLock.credId()) return;
   $('#faceIcon').setAttribute('data-state', 'idle');
-  $('#lockMsg').textContent = '點「解鎖」用 Face ID 打開';
+  $('#lockMsg').textContent = '正在啟動 Face ID…';
   $('#lockScreen').hidden = false;
+  // 打開就直接辨識；瀏覽器若規定要先點一下才行，就改成「點畫面任何地方」
+  setTimeout(() => tryUnlock(true), 120);
 }
-async function tryUnlock() {
-  if (unlocking) return; unlocking = true;
+async function tryUnlock(auto) {
+  if (unlocking || $('#lockScreen').hidden) return; unlocking = true;
+  const t0 = Date.now();
   const icon = $('#faceIcon'), msg = $('#lockMsg');
   icon.setAttribute('data-state', 'scanning'); msg.textContent = '辨識中…';
   try {
@@ -1986,14 +2048,20 @@ async function tryUnlock() {
     haptic && haptic();
     setTimeout(() => { $('#lockScreen').hidden = true; icon.setAttribute('data-state', 'idle'); }, 750);
   } catch (e) {
+    if (auto === true && e && e.name === 'NotAllowedError' && Date.now() - t0 < 1500) {
+      // 沒跳出辨識就被擋下：需要使用者先碰一下螢幕
+      icon.setAttribute('data-state', 'idle'); msg.textContent = '輕點畫面任何地方，用 Face ID 解鎖';
+      unlocking = false; return;
+    }
     icon.setAttribute('data-state', 'failure');
     msg.textContent = e && e.name === 'NotAllowedError' ? '沒有辨識成功，再試一次' : '無法使用 Face ID：' + ((e && e.message) || '請改用密碼登入');
   }
   unlocking = false;
 }
 function setupFaceLock() {
-  $('#lockRetry').addEventListener('click', tryUnlock);
-  $('#faceIcon').addEventListener('click', tryUnlock);
+  $('#lockRetry').addEventListener('click', () => tryUnlock());
+  $('#faceIcon').addEventListener('click', () => tryUnlock());
+  $('#lockScreen').addEventListener('click', (e) => { if (!e.target.closest('button')) tryUnlock(); });
   $('#lockPw').addEventListener('click', async () => { FaceLock.disable(); await HanCloud.auth.signOut(); location.reload(); });
   // 離開超過 1 分鐘再回來就重新上鎖
   document.addEventListener('visibilitychange', () => {

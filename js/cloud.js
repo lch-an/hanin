@@ -46,7 +46,7 @@ window.HanCloud = (() => {
     async session() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     onChange(cb) { if (sb) sb.auth.onAuthStateChange((ev, s) => cb(ev, s)); },
     async signUp(email, password, name) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: backUrl(), data: { name, privacy_version: '2026-11-05b', privacy_agreed_at: new Date().toISOString() } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: backUrl(), data: { name, privacy_version: '2026-11-06', privacy_agreed_at: new Date().toISOString() } } });
       if (error) throw new Error(errText(error));
       return { needConfirm: !data.session };
     },
@@ -224,6 +224,17 @@ window.HanCloud = (() => {
     },
     async saveCard(card, rules) { const { data, error } = await sb.rpc('admin_save_card', { card, rules }); if (error) throw new Error(error.message); return data; },
     async deleteCard(id) { const { error } = await sb.rpc('admin_delete_card', { card_id: id }); if (error) throw new Error(error.message); },
+    // 用 Google Gemini 上網查卡片權益（只送卡名與銀行名），回傳草稿給管理員核對
+    async lookupCard(name, bank) {
+      const { data, error } = await sb.functions.invoke('card-lookup', { body: { name, bank } });
+      if (error) {
+        let msg = 'AI 搜尋失敗，請稍後再試';
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+        if (/Failed to send|not found|404/i.test(String(error.message)) && msg.startsWith('AI 搜尋失敗')) msg = 'AI 搜尋還沒開通：請先在 Supabase 部署 card-lookup 函式';
+        throw new Error(msg);
+      }
+      return data.result;
+    },
   };
 
   // ---------- 三餐提醒（Web Push）----------
