@@ -1352,7 +1352,7 @@ function cardPicker(cur) {
     const name = q.value.trim(); picks.replaceChildren(); msg.style.color = '';
     if (!bank.value) { msg.textContent = '先選擇銀行'; return; }
     if (name.length < 2) { msg.textContent = '請輸入卡名'; return; }
-    go.disabled = true; go.textContent = '查詢中…'; msg.textContent = '先找資料庫，沒有的話 AI 會上網查官網，約 10～30 秒';
+    go.disabled = true; go.textContent = '查詢中…'; msg.textContent = '先找資料庫，沒有的話請 AI 整理，約 10～30 秒';
     try {
       const r = await HanCloud.lookupCard(name, bank.value);
       if (r.status === 'choose') { msg.textContent = '資料庫裡有幾張相近的卡，選一張：'; picks.replaceChildren(...r.cards.map(c => el('button', { type: 'button', text: c.name, onclick: () => { const full = CARDS.byId.get(c.id); if (full) choose(full); picks.replaceChildren(); msg.textContent = '已選好'; } }))); return; }
@@ -1366,7 +1366,7 @@ function cardPicker(cur) {
   } });
   const ai = el('details', { class: 'aibox', style: 'margin-top:6px' },
     el('summary', { class: 'small', text: '清單裡沒有我的卡？讓 AI 查' }),
-    el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '先選銀行再輸入卡名。已經有人查過的卡會直接使用，不用重查。AI 辨識不保證完全正確，請對照銀行官網。' }),
+    el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '先選銀行再輸入卡名。已經有人查過的卡會直接使用，不用重查。AI 依既有知識整理、未上網查證，不保證完全正確，請對照銀行官網。' }),
     el('div', { class: 'flex' }, q, go), picks, msg);
   return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), ai), value: () => card.value };
 }
@@ -1686,7 +1686,7 @@ function openCardEditor(card) {
   const aiSrc = el('div', { class: 'small muted', id: 'aiCardSrc' });
   const aiGo = el('button', { class: 'btn', type: 'button', id: 'aiCardGo', text: 'AI 搜尋', onclick: async () => {
     const q = aiQ.value.trim(); if (q.length < 2) { aiMsg.textContent = '請輸入卡名'; return; }
-    aiGo.disabled = true; aiGo.textContent = '搜尋中…'; aiMsg.style.color = ''; aiMsg.textContent = '正在查官網，約 10～30 秒'; aiSrc.replaceChildren();
+    aiGo.disabled = true; aiGo.textContent = '搜尋中…'; aiMsg.style.color = ''; aiMsg.textContent = 'AI 整理中，約 10～30 秒'; aiSrc.replaceChildren();
     try {
       const r = await HanCloud.admin.lookupCard(q, bankName(bank));
       const c = r.card || {};
@@ -1704,7 +1704,7 @@ function openCardEditor(card) {
   } });
   const aiBox = el('div', { class: 'edit aibox', style: 'margin-top:8px' },
     el('b', { style: 'font-size:14px', text: '讓 AI 幫你查' }),
-    el('div', { class: 'small muted', style: 'margin:2px 0 6px', text: '由 Google Gemini 上網搜尋官網權益並預先填好。AI 辨識不保證完全正確，請務必對照官網確認後再儲存。' }),
+    el('div', { class: 'small muted', style: 'margin:2px 0 6px', text: '由 Google Gemini 整理這張卡的權益並預先填好。目前未連網查證，資料可能過時；AI 辨識不保證完全正確，請務必對照官網確認後再儲存。' }),
     el('div', { class: 'flex' }, aiQ, aiGo), aiMsg, aiSrc);
   const msg = el('div', { class: 'small', style: 'color:var(--exp);min-height:1.2em' });
   const save = el('button', { class: 'btn', type: 'button', text: '儲存', onclick: async () => {
