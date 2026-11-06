@@ -78,7 +78,17 @@ button{font:inherit;color:inherit}
 nav.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));width:calc(min(402px, 100vw) - 24px);display:flex;justify-content:center;align-items:flex-end;z-index:10;padding:4px 6px;border-radius:34px}
 nav.tabs .in{display:flex;width:100%;max-width:560px}
 nav.tabs a{flex:1;display:flex;align-items:center;justify-content:center;min-height:56px;padding:6px 2px;color:var(--ios-glass-label, var(--ink));text-decoration:none;font-size:15px;font-weight:600;border-radius:28px;margin:2px}
-nav.tabs a.on{background:rgba(127,127,127,.16)}
+nav.tabs a.on{background:transparent}
+nav.tabs{touch-action:pan-y;user-select:none;-webkit-user-select:none}
+nav.tabs a{-webkit-user-drag:none;-webkit-touch-callout:none}
+nav.tabs .in{position:relative}
+nav.tabs a,nav.tabs .fab{position:relative;z-index:1}
+nav.tabs a.near{color:var(--accent)}
+.tab-lens{position:absolute;top:2px;bottom:2px;left:0;width:80px;border-radius:28px;z-index:0;pointer-events:none;opacity:0;
+  transition:transform .42s cubic-bezier(.25,1.35,.45,1),width .3s ease,opacity .2s;will-change:transform}
+.tab-lens.show{opacity:1}
+nav.tabs.dragging .tab-lens{transition:width .15s ease,opacity .2s}
+nav.tabs.dragging{transform:translateX(-50%) scale(1.02);transition:transform .2s}
 nav.tabs a .i{display:block;font-size:20px;line-height:1.3}
 nav.tabs a.on{color:var(--accent)}
 nav.tabs .fab{flex:0 0 76px;display:flex;justify-content:center}
@@ -505,11 +515,12 @@ body{background:transparent}
 </div>
 
 <nav class="tabs ios-glass" id="appNav" hidden><div class="in">
-  <a href="#home" data-v="home">首頁</a>
-  <a href="#ledger" data-v="ledger">明細</a>
+  <span class="tab-lens ios-glass-clear" id="tabLens" aria-hidden="true"></span>
+  <a href="#home" data-v="home" draggable="false">首頁</a>
+  <a href="#ledger" data-v="ledger" draggable="false">明細</a>
   <span class="fab"><button id="fab" class="ios-glass-prominent" aria-label="記一筆">＋</button></span>
-  <a href="#assets" data-v="assets">資產</a>
-  <a href="#me" data-v="me">我的</a>
+  <a href="#assets" data-v="assets" draggable="false">資產</a>
+  <a href="#me" data-v="me" draggable="false">我的</a>
 </div></nav>
 
 <div class="backdrop" id="backdrop"></div>
@@ -1196,6 +1207,7 @@ function route() {
   if (view === 'admin') renderAdmin();
   if (view === 'me') { renderMeal(); renderMe(); renderFaceSetting(); }
   $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === (view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view)));
+  requestAnimationFrame(() => moveLens());
   $$('.vsw a').forEach(a => a.classList.toggle('on', a.dataset.sw === view));
   render(); window.scrollTo(0, 0);
 }
@@ -1866,6 +1878,55 @@ function setupMe() {
   applyPrefs();
 }
 
+// ===== 分頁列：液態玻璃鏡片，可以按住左右拖動切換 =====
+let lensX = 0, lensDrag = null;
+function lensTarget() { return $('nav.tabs a.on'); }
+function placeLens(x, w, sx = 1, sy = 1) {
+  const L = $('#tabLens'); if (!L) return;
+  L.style.width = w + 'px';
+  L.style.transform = `translateX(${x}px) scale(${sx},${sy})`;
+  L.classList.add('show'); lensX = x;
+}
+function moveLens() {
+  const a = lensTarget(), nav = $('#appNav');
+  if (!a || !nav || nav.hidden) return;
+  placeLens(a.offsetLeft, a.offsetWidth);
+}
+function setupTabDrag() {
+  const nav = $('#appNav'), tabs = () => $$('nav.tabs a');
+  const nearest = (cx) => { let best = null, d = 1e9; for (const a of tabs()) { const c = a.offsetLeft + a.offsetWidth / 2, dd = Math.abs(c - cx); if (dd < d) { d = dd; best = a; } } return best; };
+  nav.addEventListener('pointerdown', (e) => {
+    const a = e.target.closest('nav.tabs a'); if (!a) return;
+    if (e.pointerType === 'mouse') e.preventDefault();
+    const box = nav.querySelector('.in').getBoundingClientRect();
+    lensDrag = { id: e.pointerId, startX: e.clientX, left: box.left, moved: false, lastX: e.clientX, lastT: performance.now(), v: 0, w: a.offsetWidth, near: a };
+  });
+  nav.addEventListener('pointermove', (e) => {
+    if (!lensDrag || e.pointerId !== lensDrag.id) return;
+    const dx = e.clientX - lensDrag.startX;
+    if (!lensDrag.moved && Math.abs(dx) < 6) return;
+    if (!lensDrag.moved) { lensDrag.moved = true; nav.classList.add('dragging'); try { nav.setPointerCapture(e.pointerId); } catch {} }
+    const now = performance.now(); lensDrag.v = (e.clientX - lensDrag.lastX) / Math.max(1, now - lensDrag.lastT); lensDrag.lastX = e.clientX; lensDrag.lastT = now;
+    const inner = nav.querySelector('.in'), cx = Math.min(Math.max(e.clientX - lensDrag.left, lensDrag.w / 2), inner.offsetWidth - lensDrag.w / 2);
+    // 拖動時鏡片會依速度拉長、變扁，像液體
+    const stretch = Math.min(Math.abs(lensDrag.v) * 0.35, 0.35);
+    placeLens(cx - lensDrag.w / 2, lensDrag.w, 1.12 + stretch, 1.08 - stretch * 0.4);
+    const n = nearest(cx);
+    if (n !== lensDrag.near) { tabs().forEach(t => t.classList.toggle('near', t === n)); lensDrag.near = n; haptic(); }
+  });
+  const end = (e) => {
+    if (!lensDrag || (e && e.pointerId !== lensDrag.id)) return;
+    const d = lensDrag; lensDrag = null; nav.classList.remove('dragging'); tabs().forEach(t => t.classList.remove('near'));
+    if (!d.moved) return;
+    d.suppressClick = true; nav._suppress = Date.now();
+    if (d.near && location.hash !== d.near.getAttribute('href')) location.hash = d.near.getAttribute('href');
+    else moveLens();
+  };
+  nav.addEventListener('pointerup', end); nav.addEventListener('pointercancel', end);
+  nav.addEventListener('click', (e) => { if (nav._suppress && Date.now() - nav._suppress < 400 && e.target.closest('nav.tabs a')) { e.preventDefault(); } }, true);
+  window.addEventListener('resize', moveLens);
+}
+
 // ===== iOS 外觀：深色模式跟系統 =====
 function setupIosLook() {
   // iOS 樣式表載不到（離線或網站掛掉）時，改用內建的玻璃效果，避免按鈕變透明看不到
@@ -2016,7 +2077,7 @@ function showInstallHint() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
   $('#a2hs').hidden = !(ios && !standalone && !HanCloud.isNative);
 }
-function showAuth(on) { $('#authScreen').hidden = !on; $('#appWrap').hidden = $('#appNav').hidden = on; }
+function showAuth(on) { $('#authScreen').hidden = !on; $('#appWrap').hidden = $('#appNav').hidden = on; if (!on) requestAnimationFrame(() => moveLens()); }
 
 async function start() {
   route(); window.addEventListener('hashchange', route);
@@ -2079,7 +2140,7 @@ async function start() {
     if (!f.hidden) { f.append(el('h2', { text: '新增帳戶或資產' }), accEditor(null, () => { f.hidden = true; f.replaceChildren(); }, S.assetTab !== 'all' ? S.assetTab : 'bank')); window.scrollTo(0, 0); }
   });
 
-  setupAuthUI(); showInstallHint(); setupMe(); setupScrollLock(); setupIosLook(); setupFaceLock();
+  setupAuthUI(); showInstallHint(); setupMe(); setupScrollLock(); setupIosLook(); setupFaceLock(); setupTabDrag();
   const ua = HanCloud.auth.urlAuth;
   if (ua.err || ua.hasToken || ua.type) {
     const m = $('#aMsg');
