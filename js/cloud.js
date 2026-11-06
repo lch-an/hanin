@@ -235,6 +235,7 @@ window.HanCloud = (() => {
       if (error) {
         let msg = 'AI 搜尋失敗，請稍後再試';
         try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+        if (error.context && [504, 546].includes(error.context.status)) msg = 'AI 回應太久被系統中斷，請再試一次';
         if (/Failed to send|not found|404/i.test(String(error.message)) && msg.startsWith('AI 搜尋失敗')) msg = 'AI 搜尋還沒開通：請先在 Supabase 部署 card-lookup 函式';
         throw new Error(msg);
       }
@@ -271,6 +272,7 @@ window.HanCloud = (() => {
     if (error) {
       let msg = 'AI 查詢失敗，請稍後再試';
       try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+        if (error.context && [504, 546].includes(error.context.status)) msg = 'AI 回應太久被系統中斷，請再試一次';
       throw new Error(msg);
     }
     return data.result;
