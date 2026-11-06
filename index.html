@@ -703,7 +703,9 @@ function renderSheet() {
   const isT = F.type === 'transfer';
   $('#catBox').hidden = isT; $('#toBox').hidden = !isT; $('#tpl').hidden = isT || !!F.id;
   if (!isT) {
-    const list = CATS[F.type]; if (!list.some(c => c[0] === F.cat)) F.cat = list[0][0];
+    // 房租、保費、訂閱這類固定支出會自動記帳，記一筆不用出現（修改舊紀錄時保留原本的分類）
+    const nlSet = nonLiving();
+    const list = CATS[F.type].filter(c => F.type !== 'expense' || !nlSet.has(c[0]) || (F.id && c[0] === F.cat)); if (!list.some(c => c[0] === F.cat)) F.cat = list[0][0];
     const shown = F.catsOpen ? list : topCats(F.type, list, 7, F.cat);
     const more = list.length > shown.length || F.catsOpen ? el('button', { class: 'cat more', type: 'button', text: F.catsOpen ? '收起' : `更多 ${list.length - shown.length}`, onclick: () => { F.catsOpen = !F.catsOpen; renderSheet(); } }) : null;
     $('#cats').replaceChildren(...shown.map(([n, i, c]) => el('button', { class: 'cat' + (n === F.cat ? ' on' : ''), style: `--c:${c}`, type: 'button', onclick: () => { F.cat = n; if (F.type === 'expense' && !F.accTouched) { const b = topAccForCat(n); if (b) { F.acc = b.acc; F.via = b.via; } } renderSheet(); } }, el('span', { text: n }), F.type === 'expense' && nonLiving().has(n) ? el('span', { class: 'nl', text: '固定支出' }) : null)), more);
@@ -739,7 +741,7 @@ function smartPicks(type, limit) {
   const now = new Date(), hr = now.getHours() + now.getMinutes() / 60, wkend = [0, 6].includes(now.getDay());
   const groups = new Map();
   for (const t of allTx()) {
-    if (t.type !== type || !accById(t.account)) continue;
+    if (t.type !== type || !accById(t.account) || t.auto || (type === 'expense' && nonLiving().has(t.category))) continue;
     const k = [t.category, t.account, t.via || '', t.note || ''].join('|');
     const g = groups.get(k) || { t, n: 0, score: 0, amts: [], last: 0 };
     const at = new Date(t.createdAt || (t.date + 'T12:00:00'));
@@ -766,8 +768,7 @@ function topCats(type, list, n, cur) {
   const cnt = new Map(), since = Date.now() - 90 * 86400000;
   for (const t of allTx()) if (t.type === type && (t.createdAt || Date.parse(t.date) || 0) >= since) cnt.set(t.category, (cnt.get(t.category) || 0) + 1);
   const order = list.map((c, i) => [c, i]).sort((a, b) => (cnt.get(b[0][0]) || 0) - (cnt.get(a[0][0]) || 0) || a[1] - b[1]).map(x => x[0]);
-  const nl = nonLiving();
-  let top = order.filter(c => !nl.has(c[0])).slice(0, n); // 房租、保費、訂閱這類固定支出會自動記帳，平常不用出現在前面
+  let top = order.slice(0, n);
   const curC = list.find(c => c[0] === cur);
   if (curC && !top.includes(curC)) top = [...top.slice(0, n - 1), curC];
   return list.filter(c => top.includes(c));
