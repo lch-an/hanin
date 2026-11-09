@@ -663,7 +663,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v33';
+const APP_VER = 'v34';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -1052,7 +1052,9 @@ function renderSplit() {
   const owedMe = Object.values(me).filter(v => v > 0).reduce((a, b) => a + b, 0);
   const iOwe = -Object.values(me).filter(v => v < 0).reduce((a, b) => a + b, 0);
   const friends = (sp.friends || []).slice().sort((a, b) => Math.abs(me[b.id] || 0) - Math.abs(me[a.id] || 0));
-  const settle = splSettle(sp);
+  // 最少轉帳只算分帳的事件；借錢（借出／借入）不混進來，另外用朋友旁的「結清」
+  const settle = splSettle({ ...sp, bills: (sp.bills || []).filter(b => b.kind === 'bill') });
+  const loanLeft = (sp.bills || []).filter(b => ['lend', 'borrow'].includes(b.kind) && Object.keys(b.shares || {}).some(p => p !== b.payer && !splPaid(b, p)));
   const copyTxt = () => {
     const lines = settle.map(x => `${splName(x.from)} → ${splName(x.to)}：${money(x.amount)}`);
     const t = '分帳結算\n' + (lines.length ? lines.join('\n') : '大家都結清了');
@@ -1076,11 +1078,12 @@ function renderSplit() {
           v ? el('div', { class: 'amt num ' + (v > 0 ? 'inc' : 'exp'), text: money(Math.abs(v)) }) : null,
           v || splOpenItems(sp, f.id).length ? el('button', { class: 'btn ghost', type: 'button', style: 'padding:6px 10px;font-size:13px', text: '結清', onclick: () => openSettleFriend(f.id) }) : null);
       })) : el('div', { class: 'small muted', text: '還沒有朋友。按上面的「朋友名單」加入，或直接按「分帳」在表單裡新增。' })),
-    settle.length && (sp.friends || []).length > 1 ? el('div', { class: 'card' },
+    settle.length && (sp.friends || []).length > 0 ? el('div', { class: 'card' },
       el('div', { class: 'sb' }, el('h2', { style: 'margin:0', text: '最少轉帳結清' }), el('button', { class: 'x', type: 'button', text: '複製給 LINE', onclick: copyTxt })),
       el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '把所有人互相欠的錢抵銷後，照這樣轉就全部結清。' }),
       ...settle.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num', text: money(x.amount) }))),
-      el('button', { class: 'btn', type: 'button', id: 'splAllDone', style: 'width:100%;margin-top:10px', text: '大家照這樣轉完了，全部結清', onclick: openSettleAll })) : null,
+      loanLeft.length ? el('div', { class: 'small muted', id: 'splLoanNote', style: 'margin-top:6px', text: `借錢沒有算在裡面：${loanLeft.map(b => `${b.kind === 'lend' ? splName(Object.keys(b.shares)[0]) + ' 欠我' : '我欠 ' + splName(b.payer)} ${money(b.amount)}${b.title ? '（' + b.title + '）' : ''}`).join('、')}，還錢時按朋友旁的「結清」。` }) : null,
+      el('button', { class: 'btn', type: 'button', id: 'splAllDone', style: 'width:100%;margin-top:10px', text: '大家照這樣轉完了，結清這些分帳', onclick: openSettleAll })) : null,
     el('div', { class: 'card' }, el('h2', { text: '最近紀錄' }),
       (sp.bills || []).length ? el('ul', { class: 'list', id: 'splList' }, ...(sp.bills || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.ts || 0) - (a.ts || 0)).slice(0, 50).map(b => {
         const mine = Number((b.shares || {}).me || 0);
@@ -1136,27 +1139,37 @@ function openSettleFriend(fid) {
 function openSettleAll() {
   const m = $('#pModal'), box = $('#pBox');
   const close = () => { m.hidden = true; box.replaceChildren(); };
-  const sp0 = splData(), plan = splSettle(sp0);
-  const mine = plan.filter(x => x.from === 'me' || x.to === 'me');
-  const net = mine.reduce((a, x) => a + (x.to === 'me' ? x.amount : -x.amount), 0);
+  const open = (splData().bills || []).filter(b => !['recv', 'pay'].includes(b.kind) && Object.keys(b.shares || {}).some(p => p !== b.payer && !splPaid(b, p)))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.ts || 0) - (b.ts || 0));
+  const sel = new Set(open.filter(b => b.kind === 'bill').map(b => b.id)); // 借錢預設不勾
   let acc = (payables()[0] || {}).id || '', sync = S.accounts.length > 0;
   const draw = () => {
+    const sp0 = splData(), plan = splSettle({ ...sp0, bills: (sp0.bills || []).filter(b => sel.has(b.id)) });
+    const net = plan.filter(x => x.from === 'me' || x.to === 'me').reduce((a, x) => a + (x.to === 'me' ? x.amount : -x.amount), 0);
     const accSel = el('select', { class: 't' }, ...payables().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
     const sw = el('input', { type: 'checkbox' }); sw.checked = sync; sw.addEventListener('change', () => { sync = sw.checked; draw(); });
     put(box,
-      el('div', { class: 'sb' }, el('b', { text: '全部結清' }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
-      el('div', { class: 'small muted', style: 'margin:6px 0', text: '確認大家都照下面轉完錢了，所有還沒結清的事件會一起標記成已結清。' }),
-      ...plan.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num ' + (x.to === 'me' ? 'inc' : x.from === 'me' ? 'exp' : ''), text: money(x.amount) }))),
+      el('div', { class: 'sb' }, el('b', { text: '照最少轉帳結清' }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
+      el('div', { class: 'small muted', style: 'margin:6px 0', text: '勾選這次要結清的事件（借錢預設不勾，會繼續留著），轉帳金額會跟著重算。' }),
+      el('div', { id: 'stlAllList' }, ...open.map(b => {
+        const cb = el('input', { type: 'checkbox' }); cb.checked = sel.has(b.id);
+        cb.addEventListener('change', () => { cb.checked ? sel.add(b.id) : sel.delete(b.id); draw(); });
+        return el('label', { class: 'spl-f', style: 'cursor:pointer' }, cb,
+          el('div', { class: 'n' }, el('div', { text: b.title || SPL_KINDS[b.kind] }), el('div', { class: 'small muted', style: 'font-weight:400', text: `${(b.date || '').slice(5).replace('-', '/')}・${SPL_KINDS[b.kind]}・${splName(b.payer)}付` })),
+          el('div', { class: 'amt num', text: money(b.amount) }));
+      })),
+      el('h3', { style: 'margin:12px 0 4px;font-size:15px', text: '要這樣轉' }),
+      plan.length ? el('div', { id: 'stlAllPlan' }, ...plan.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num ' + (x.to === 'me' ? 'inc' : x.from === 'me' ? 'exp' : ''), text: money(x.amount) })))) : el('div', { class: 'small muted', text: sel.size ? '互相抵銷，不用轉帳' : '請勾選事件' }),
       el('div', { class: 'sb', style: 'margin-top:10px' }, el('b', { text: net > 0 ? '我實際收到' : net < 0 ? '我實際付出' : '我不用收也不用付' }), el('b', { class: 'num ' + (net > 0 ? 'inc' : net < 0 ? 'exp' : ''), id: 'stlAllNet', text: money(Math.abs(net)) })),
       el('div', { class: 'edit', style: 'margin-top:10px' },
         el('div', { class: 'sb mrow0', style: 'align-items:center' }, el('span', { class: 'small', text: '同時記到我的記帳' }), el('label', { class: 'switch' }, sw, el('span'))),
-        sync ? el('div', { class: 'small muted', style: 'margin-top:4px', text: '「朋友欠我」和「我欠朋友」會一起歸零；帳戶只會多一筆實際收到（或付出）的錢，不算收入或支出。' }) : null,
+        sync ? el('div', { class: 'small muted', style: 'margin-top:4px', text: '這些事件在「朋友欠我」「我欠朋友」的金額會沖掉；帳戶只會多一筆實際收到（或付出）的錢，不算收入或支出。' }) : null,
         sync && net ? el('label', { class: 'small muted', style: 'display:flex;flex-direction:column;gap:3px;margin-top:8px' }, net > 0 ? '錢進到哪個帳戶' : '從哪個帳戶付', accSel) : null),
-      el('button', { class: 'btn', type: 'button', id: 'stlAllGo', style: 'width:100%;margin-top:14px', text: '確認全部結清', onclick: async (e) => {
+      el('button', { class: 'btn', type: 'button', id: 'stlAllGo', style: 'width:100%;margin-top:14px', disabled: sel.size ? null : '', text: sel.size ? `確認結清 ${sel.size} 件事` : '請勾選事件', onclick: async (e) => {
         e.target.disabled = true;
         const sp = splData(), id = splId(), today = todayStr(); let recv = 0, owe = 0, n = 0;
         const bills = sp.bills.map(b => {
-          if (['recv', 'pay'].includes(b.kind)) return b;
+          if (!sel.has(b.id)) return b;
           const nb = { ...b, paid: { ...(b.paid || {}) } };
           for (const [p, v] of Object.entries(b.shares || {})) {
             if (p === b.payer || nb.paid[p]) continue;
@@ -1168,15 +1181,15 @@ function openSettleAll() {
         const txns = [];
         if (sync && S.accounts.length) {
           try {
-            const put1 = async (suffix, d) => { const tid = 's_all_' + id + '_' + suffix; await S.db.doc('txns/' + tid).set({ type: 'transfer', category: '轉帳', date: today, note: '分帳全部結清', createdAt: Date.now(), ...d }); txns.push(tid); };
+            const put1 = async (suffix, d) => { const tid = 's_all_' + id + '_' + suffix; await S.db.doc('txns/' + tid).set({ type: 'transfer', category: '轉帳', date: today, note: '分帳結清', createdAt: Date.now(), ...d }); txns.push(tid); };
             const off = Math.min(recv, owe), rest = Math.round(recv - owe);
             if (off > 0) await put1('o', { amount: Math.round(off), account: await splAccount('receivable'), to: await splAccount('loan') });
             if (rest > 0 && acc) await put1('r', { amount: rest, account: await splAccount('receivable'), to: acc });
             if (rest < 0 && acc) await put1('p', { amount: -rest, account: acc, to: await splAccount('loan') });
           } catch { toast('同步記帳失敗，結清狀態仍會儲存'); }
         }
-        const settles = [...(sp.settles || []), { id, at: today, plan, txns }];
-        if (await saveSplit({ ...sp, bills, settles }, `已全部結清（${n} 筆）`)) close(); else e.target.disabled = false;
+        const settles = [...(sp.settles || []), { id, at: today, plan, bills: [...sel], txns }];
+        if (await saveSplit({ ...sp, bills, settles }, `已結清 ${sel.size} 件事`)) close(); else e.target.disabled = false;
       } }));
   };
   m.onclick = (e) => { if (e.target === m) close(); };
