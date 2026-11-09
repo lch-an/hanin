@@ -1107,7 +1107,7 @@ function openSplitForm(kind, bill, preset = {}) {
     const friends = sp.friends || [];
     const segKinds = F2.kind === 'bill' ? null : ['lend', 'borrow', 'recv', 'pay'];
     const amt = el('input', { class: 't num', id: 'splAmt', inputmode: 'decimal', placeholder: '金額', value: F2.amount });
-    amt.addEventListener('input', () => { F2.amount = amt.value; if (F2.kind === 'bill') drawShares(); });
+    amt.addEventListener('input', () => { F2.amount = amt.value; if (F2.kind !== 'bill') return; if (F2.people.length >= 2) drawShares(); else { const o = box.querySelector('#splOne'); if (o) o.textContent = `全部 ${money(Number(String(F2.amount).replace(/,/g, '')) || 0)} 由${splName(F2.people[0])}負擔`; } });
     const title = el('input', { class: 't', id: 'splTitle', placeholder: F2.kind === 'bill' ? '例如 宵夜、畢旅住宿' : '備註（可空）', value: F2.title, maxlength: 30 });
     title.addEventListener('input', () => F2.title = title.value);
     const date = el('input', { class: 't', type: 'date', value: F2.date }); date.addEventListener('change', () => F2.date = date.value);
@@ -1148,10 +1148,11 @@ function openSplitForm(kind, bill, preset = {}) {
         L('誰付的錢', el('div', { class: 'spl-who' }, ...['me', ...friends.map(f => f.id)].map(id => whoBtn(id, F2.payer === id, () => { F2.payer = id; if (!F2.people.includes(id)) F2.people.push(id); draw(); })))),
         L('哪些人要分（含付錢的人）', el('div', { class: 'spl-who', id: 'splPeople' }, ...['me', ...friends.map(f => f.id)].map(id => whoBtn(id, F2.people.includes(id), () => { F2.people = F2.people.includes(id) ? F2.people.filter(x => x !== id) : [...F2.people, id]; draw(); })))),
         newFriend,
-        L('怎麼分', el('div', { class: 'spl-who', id: 'splMode' },
+        // 只有一個人要負擔（例如只有對方）就不用選怎麼分：全部算他的
+        F2.people.length < 2 ? (F2.people.length === 1 ? el('div', { class: 'small muted', id: 'splOne', style: 'margin-top:8px', text: `全部 ${money(Number(String(F2.amount).replace(/,/g, '')) || 0)} 由${splName(F2.people[0])}負擔` }) : null) : L('怎麼分', el('div', { class: 'spl-who', id: 'splMode' },
           el('button', { type: 'button', class: F2.mode === 'equal' ? 'on' : '', text: '平分', onclick: () => { F2.mode = 'equal'; draw(); } }),
           el('button', { type: 'button', class: F2.mode === 'exact' ? 'on' : '', text: '各付各的金額', onclick: () => { F2.mode = 'exact'; draw(); } }))),
-        sharesBox,
+        F2.people.length < 2 ? null : sharesBox,
       ] : [
         L(F2.kind === 'lend' ? '借給誰' : F2.kind === 'borrow' ? '跟誰借' : F2.kind === 'recv' ? '誰還我錢' : '還錢給誰', el('div', { class: 'spl-who' }, ...friends.map(f => whoBtn(f.id, F2.friend === f.id, () => { F2.friend = f.id; draw(); })))),
         newFriend, L('備註', title),
@@ -1170,7 +1171,7 @@ function openSplitForm(kind, bill, preset = {}) {
           await splDeleteTxns(bill); await saveSplit({ ...sp, bills: sp.bills.filter(x => x.id !== bill.id) }, '已刪除'); close();
         } }) : null,
         el('button', { class: 'btn', type: 'button', id: 'splSave', style: 'flex:1', text: '儲存', onclick: save })));
-    if (F2.kind === 'bill') drawShares();
+    if (F2.kind === 'bill' && F2.people.length >= 2) drawShares();
   };
   const save = async () => {
     const T = Math.round(Number(String(F2.amount).replace(/,/g, '')) || 0);
@@ -1181,7 +1182,7 @@ function openSplitForm(kind, bill, preset = {}) {
       if (!F2.people.length) { toast('請選要分的人'); return; }
       if (F2.people.length === 1 && F2.people[0] === F2.payer) { toast('只有付錢的人自己，不用分帳'); return; }
       payer = F2.payer;
-      if (F2.mode === 'equal') shares = splEqual(T, F2.people);
+      if (F2.mode === 'equal' || F2.people.length === 1) shares = splEqual(T, F2.people);
       else {
         shares = {}; for (const p of F2.people) shares[p] = Math.round(Number(F2.exact[p]) || 0);
         const sum = Object.values(shares).reduce((a, b) => a + b, 0);
