@@ -472,12 +472,12 @@ body{background:transparent}
       <details class="mrow"><summary>修改密碼</summary><div class="flex" style="margin-top:8px"><input class="t" id="pwIn" type="password" autocomplete="new-password" placeholder="新密碼（至少 8 字元，含英文和數字）"><button class="btn" id="pwBtn" type="button" style="white-space:nowrap">更新</button></div></details>
       <div class="sb mrow" id="adminRow" hidden><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">維護信用卡回饋資料（管理員）</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
     </div>
-    <div class="card"><div class="sb"><div><h2 style="margin:0">信用卡回饋查詢</h2><div class="small muted">每張卡的通路、回饋 %、上限和方案</div></div><button class="btn ghost" id="cardBrowse" type="button">查看</button></div></div>
+    <div class="card"><div class="sb"><div><h2 style="margin:0">信用卡回饋</h2><div class="small muted">我的卡拿了多少、還剩多少額度；也能查其他卡</div></div><button class="btn ghost" id="cardBrowse" type="button">查看</button></div></div>
     <div class="card" id="uiCard"><h2>介面設定 <small>只影響這台裝置</small></h2>
       <div class="sb mrow0"><div><b style="font-size:14px">首頁最近紀錄</b><div class="small muted">打開 App 時先看清單還是月曆</div></div><div class="seg mini" id="prefHome"><button data-v="list" type="button">清單</button><button data-v="cal" type="button">月曆</button></div></div>
       <div class="sb mrow0"><div><b style="font-size:14px">資產頁預設分頁</b></div><select class="t" id="prefAsset" style="max-width:130px"></select></div>
       <div class="sb mrow0"><div><b style="font-size:14px">文字大小</b></div><div class="seg mini" id="prefZoom"><button data-v="0.9" type="button">小</button><button data-v="1" type="button">標準</button><button data-v="1.12" type="button">大</button></div></div>
-      <div class="sb mrow0" id="faceRow" hidden><div><b style="font-size:14px">Face ID 解鎖</b><div class="small muted">打開 App 或離開超過 1 分鐘回來時，要先通過 Face ID。辨識在手機上完成，不會上傳</div></div><label class="switch"><input type="checkbox" id="prefFace"><span></span></label></div>
+      <div class="sb mrow0" id="faceRow" hidden><div><b style="font-size:14px">Face ID 解鎖</b><div class="small muted">預設關閉，打開 App 就能直接用。想要隱私再開：打開 App 或離開超過 1 分鐘回來時要先通過 Face ID，辨識在手機上完成，不會上傳</div></div><label class="switch"><input type="checkbox" id="prefFace"><span></span></label></div>
       <div class="sb mrow0"><div><b style="font-size:14px">隱藏金額</b><div class="small muted">在外面打開 App 時，金額先模糊處理，點一下才顯示</div></div><label class="switch"><input type="checkbox" id="prefHide"><span></span></label></div>
     </div>
     <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
@@ -1223,9 +1223,9 @@ function renderMonthRewards() {
   box.hidden = false;
   $('#rwTotal').textContent = money(total);
   put($('#rwList'), rows.length ? rows.map(r => el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(r.card, r.account) },
-      el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || '未設定'}` : '') })),
+      el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || '未設定'}` : '') + (() => { const u = HanRewards.cardUsage({ account: r.account, card: r.card, txns: allTx(), date: todayStr() }); const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0]; return near ? (near.left <= 0 ? `・${near.rule.channel}已拿滿` : `・${near.rule.channel}還能拿 ${money(near.left)}`) : ''; })() })),
       el('div', { class: 'amt num inc', text: money(r.reward) }))) : el('div', { class: 'small muted', text: '這個月還沒有用信用卡記帳。' }),
-    el('div', { class: 'small muted', style: 'margin-top:6px', text: '依你記的每筆消費、當時切的方案和每條回饋上限估算，實際以銀行帳單為準。點卡片可以看回饋規則。' }));
+    el('div', { class: 'small muted', style: 'margin-top:6px', text: '依你記的每筆消費、當時切的方案和每條回饋上限估算，實際以銀行帳單為準。點卡片可以看每個通路已拿多少、還剩多少額度。' }));
 }
 
 // ===== 卡片回饋規則（看得到每條通路、％數、上限、條件）=====
@@ -1236,8 +1236,27 @@ function ruleLine(r) {
       el('div', { class: 'small muted', style: 'font-weight:400', text: [r.cap_amount ? `${PERIOD_ZH[r.cap_period] || ''}上限 ${money(r.cap_amount)}` : '無上限', r.conditions || '', r.valid_to ? `到 ${r.valid_to.replace(/-/g, '/')}` : ''].filter(Boolean).join('・') })),
     el('div', { class: 'amt num', text: pctTxt(r.rate) }));
 }
+function myCardAccounts() { return S.accounts.filter(a => typeOf(a) === 'card' && a.cardId && CARDS.byId.has(a.cardId)); }
+function usageBlock(card, acc) {
+  const u = HanRewards.cardUsage({ account: acc, card, txns: allTx(), date: todayStr() });
+  const rows = u.rules.filter(x => x.n || x.cap != null);
+  return el('div', { class: 'edit', style: 'margin:6px 0 10px' },
+    el('div', { class: 'sb' }, el('b', { text: `${acc.name}・本月` }), el('b', { class: 'num inc', text: '回饋約 ' + money(u.monthReward) })),
+    el('div', { class: 'small muted', style: 'margin:2px 0 6px', text: `本月刷 ${money(u.monthSpend)}` + (u.plan !== undefined ? `・目前方案：${u.plan || '未設定（只算不分方案的回饋）'}` : '') }),
+    ...(rows.length ? rows.map(x => {
+      const bar = x.cap != null ? el('div', { style: 'height:6px;border-radius:3px;background:var(--soft);margin:4px 0 2px;overflow:hidden' }, el('div', { style: `height:100%;width:${Math.min(100, x.reward / x.cap * 100)}%;background:${x.left <= 0 ? 'var(--exp)' : 'var(--inc)'}` })) : null;
+      const per = PERIOD_ZH[x.rule.cap_period] || '每月';
+      const txt = x.cap == null ? `已刷 ${money(x.spend)}，拿到 ${money(x.reward)}（無上限）`
+        : x.left <= 0 ? `${per}上限 ${money(x.cap)} 已拿滿，接下來這個通路只剩一般回饋`
+        : `已拿 ${money(x.reward)}／${per}上限 ${money(x.cap)}，還能拿 ${money(x.left)}（再刷約 ${money(x.needSpend)} 就滿）`;
+      return el('div', { style: 'padding:6px 0;border-top:1px solid var(--line)' },
+        el('div', { class: 'sb' }, el('span', { text: (x.rule.plan ? '〔' + x.rule.plan + '〕' : '') + (x.rule.channel || '一般消費') }), el('b', { class: 'num', text: pctTxt(x.rule.rate) })),
+        bar, el('div', { class: 'small ' + (x.cap != null && x.left <= 0 ? 'exp' : 'muted'), text: txt }));
+    }) : [el('div', { class: 'small muted', text: '這一期還沒有用這張卡記帳。' })]));
+}
 function openCardInfo(card, acc) {
   const m = $('#pModal'), box = $('#pBox');
+  const accs = acc ? [acc] : myCardAccounts().filter(a => a.cardId === card.id);
   const close = () => { m.hidden = true; box.replaceChildren(); };
   const rules = (card.card_rewards || []).slice().sort((a, b) => b.rate - a.rate);
   const plans = HanRewards.plansOf(card), base = rules.filter(r => !r.plan);
@@ -1245,10 +1264,12 @@ function openCardInfo(card, acc) {
   put(box,
     el('div', { class: 'sb' }, el('b', { text: `${bank} ${card.name}` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
     el('div', { class: 'small', style: 'margin:4px 0 8px;color:' + (card.verified === false ? 'var(--warn)' : 'var(--muted)'), text: card.verified === false ? 'AI 查詢、尚未核對，可能不完整或過時，請以銀行官網為準。' : '已核對的資料，實際權益以銀行官網公告為準。' + (card.annual_fee ? '年費：' + card.annual_fee : '') }),
-    acc && plans.length ? el('div', { class: 'small', style: 'margin-bottom:6px', text: `你目前設定的方案：${acc.cardPlan || '未設定'}（在資產頁編輯這張卡可以改）` }) : null,
+    ...accs.map(a => usageBlock(card, a)),
+    accs.length && plans.length ? el('div', { class: 'small muted', style: 'margin-bottom:6px', text: '要換方案：到資產頁編輯這張卡的「目前切換的方案」。' }) : null,
+    el('h3', { style: 'margin:10px 0 0;font-size:15px', text: '這張卡的全部回饋規則' }),
     rules.length ? null : el('div', { class: 'small muted', text: '這張卡還沒有回饋資料。' }),
     base.length ? [el('h3', { style: 'margin:10px 0 2px;font-size:15px', text: plans.length ? '不分方案都適用' : '回饋規則' }), ...base.map(ruleLine)] : null,
-    ...plans.map(p => [el('h3', { style: 'margin:12px 0 2px;font-size:15px', text: `方案：${p}` + (acc && acc.cardPlan === p ? '（目前）' : '') }), ...rules.filter(r => r.plan === p).map(ruleLine)]),
+    ...plans.map(p => [el('h3', { style: 'margin:12px 0 2px;font-size:15px', text: `方案：${p}` + (accs.some(a => a.cardPlan === p) ? '（目前）' : '') }), ...rules.filter(r => r.plan === p).map(ruleLine)]),
     card.source_url ? el('a', { class: 'small', href: card.source_url, target: '_blank', rel: 'noopener', style: 'display:inline-block;margin-top:10px;color:var(--accent)', text: '對照銀行官網' }) : null);
   m.onclick = (e) => { if (e.target === m) close(); };
   m.hidden = false;
@@ -1264,15 +1285,30 @@ function openCardBrowser() {
     const bankName = (id) => (CARDS.banks.find(b => b.id === id) || {}).name || '';
     const cards = CARDS.list.filter(c => !k || (c.name + bankName(c.bank_id)).toLowerCase().includes(k))
       .sort((a, b) => bankName(a.bank_id).localeCompare(bankName(b.bank_id), 'zh-Hant') || a.name.localeCompare(b.name, 'zh-Hant'));
-    put(list, cards.length ? cards.map(c => {
+    const mine = new Map(myCardAccounts().map(a => [a.cardId, a]));
+    const rw = new Map([...mine].map(([cid, ac]) => [cid, HanRewards.cardUsage({ account: ac, card: CARDS.byId.get(cid), txns: allTx(), date: todayStr() }).monthReward]));
+    cards.sort((a, b) => (mine.has(b.id) ? 1 : 0) - (mine.has(a.id) ? 1 : 0) || (rw.get(b.id) || 0) - (rw.get(a.id) || 0)); // 我的卡在前，回饋多的排前面
+    const firstOther = cards.findIndex(c => !mine.has(c.id));
+    put(list, cards.length ? cards.flatMap((c, i) => {
+      const head = i === 0 && mine.has(c.id) ? [el('h3', { style: 'margin:4px 0;font-size:15px', text: '我的卡' })] : i === firstOther ? [el('h3', { style: 'margin:12px 0 4px;font-size:15px', text: mine.size ? '其他卡' : '全部卡片' })] : [];
+      const a = mine.get(c.id);
+      if (a) {
+        const u = HanRewards.cardUsage({ account: a, card: c, txns: allTx(), date: todayStr() });
+        const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0];
+        return [...head, el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(c, a) },
+          el('div', { class: 'n' }, el('div', { text: a.name + (a.name !== c.name ? `（${c.name}）` : '') }), el('div', { class: 'small muted', style: 'font-weight:400', text: `本月刷 ${money(u.monthSpend)}` + (near ? (near.left <= 0 ? `・${near.rule.channel} 已拿滿` : `・${near.rule.channel} 還能拿 ${money(near.left)}`) : '') })),
+          el('div', { class: 'amt num inc', text: money(u.monthReward) }))];
+      }
+      return [...head, (() => {
       const top = Math.max(0, ...(c.card_rewards || []).map(r => Number(r.rate)));
       return el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(c) },
         el('div', { class: 'n' }, el('div', { text: c.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: bankName(c.bank_id) + (c.verified === false ? '・AI 查詢，未核對' : '') })),
         el('div', { class: 'small muted', text: '最高' }), el('div', { class: 'amt num', text: pctTxt(top) }));
+      })()];
     }) : el('div', { class: 'small muted', text: '找不到。可以在新增信用卡帳戶時讓 AI 查。' }));
   };
   q.addEventListener('input', draw);
-  put(box, el('div', { class: 'sb' }, el('b', { text: `信用卡回饋查詢（${CARDS.list.length} 張）` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })), el('div', { style: 'margin:8px 0' }, q), list);
+  put(box, el('div', { class: 'sb' }, el('b', { text: `信用卡回饋（共 ${CARDS.list.length} 張）` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })), el('div', { style: 'margin:8px 0' }, q), list);
   draw();
   m.onclick = (e) => { if (e.target === m) close(); };
   m.hidden = false;

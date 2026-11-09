@@ -228,6 +228,42 @@
     return [...per.values()].sort((a, b) => b.reward - a.reward);
   }
 
-  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf, monthRewards };
+  /**
+   * 一張卡（某個帳戶）在「目前這一期」每條規則的使用狀況：刷了多少、拿了多少、上限還剩多少、再刷多少就滿。
+   * 每筆消費用當時切的方案找最適用的規則，並照上限扣掉；期別依規則（每月／每季／每年／活動期間）。
+   */
+  function cardUsage({ account, card, txns, date }) {
+    const plans = plansOf(card), plan = plans.length ? (account.cardPlan || null) : undefined;
+    const rules = card.card_rewards || [];
+    const pkey = (r, d) => r.cap_period === 'campaign' ? 'c' : periodStart(r.cap_period || 'month', d);
+    // 往回看到最早需要的一期（季、年上限要從季初／年初算）
+    const starts = rules.map(r => r.cap_period === 'campaign' ? (r.valid_from || '0000-01-01') : periodStart(r.cap_period || 'month', date));
+    const from = [periodStart('month', date), ...starts].sort()[0];
+    const used = new Map(), stat = new Map();
+    const list = txns.filter(t => t.type === 'expense' && t.account === account.id && t.date >= from && t.date <= date)
+      .slice().sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
+    let monthReward = 0, monthSpend = 0;
+    const m0 = date.slice(0, 7);
+    for (const t of list) {
+      const amt = Number(t.amount) || 0;
+      const rule = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
+      let r = 0;
+      if (rule) {
+        r = amt * Number(rule.rate) / 100;
+        if (rule.cap_amount) { const k = rule.id + '|' + pkey(rule, t.date); const u = used.get(k) || 0; r = Math.max(0, Math.min(r, Number(rule.cap_amount) - u)); used.set(k, u + r); }
+        if (pkey(rule, t.date) === pkey(rule, date)) { const st = stat.get(rule.id) || { spend: 0, reward: 0, n: 0 }; st.spend += amt; st.reward += r; st.n++; stat.set(rule.id, st); }
+      }
+      if (t.date.slice(0, 7) === m0) { monthReward += r; monthSpend += amt; }
+    }
+    const out = rules.filter(r => plan === undefined || !r.plan || r.plan === plan).map(rule => {
+      const st = stat.get(rule.id) || { spend: 0, reward: 0, n: 0 };
+      const cap = rule.cap_amount ? Number(rule.cap_amount) : null;
+      const left = cap == null ? null : Math.max(0, cap - st.reward);
+      return { rule, ...st, cap, left, needSpend: left == null || !Number(rule.rate) ? null : left / (Number(rule.rate) / 100) };
+    }).sort((a, b) => b.reward - a.reward || Number(b.rule.rate) - Number(a.rule.rate));
+    return { plan, rules: out, monthReward, monthSpend };
+  }
+
+  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf, monthRewards, cardUsage };
   if (typeof module !== 'undefined') module.exports = api; else root.HanRewards = api;
 })(typeof window !== 'undefined' ? window : globalThis);
