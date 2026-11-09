@@ -412,6 +412,7 @@ body{background:transparent}
         </div>
       </div>
     </div>
+    <div class="card" id="rwCard" hidden><div class="sb"><h2 style="margin:0">本月刷卡回饋 <small>估算</small></h2><b class="num inc" id="rwTotal"></b></div><div id="rwList" style="margin-top:6px"></div></div>
     <div class="card"><h2>即將扣款 <small>依扣款日排序</small></h2><div class="dues" id="dues"></div></div>
     <div class="card">
       <div class="sb" style="margin-bottom:10px"><h2 style="margin:0">最近紀錄</h2><div class="seg mini" id="homeSeg"><button data-h="list">清單</button><button data-h="cal">月曆</button></div></div>
@@ -471,6 +472,7 @@ body{background:transparent}
       <details class="mrow"><summary>修改密碼</summary><div class="flex" style="margin-top:8px"><input class="t" id="pwIn" type="password" autocomplete="new-password" placeholder="新密碼（至少 8 字元，含英文和數字）"><button class="btn" id="pwBtn" type="button" style="white-space:nowrap">更新</button></div></details>
       <div class="sb mrow" id="adminRow" hidden><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">維護信用卡回饋資料（管理員）</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
     </div>
+    <div class="card"><div class="sb"><div><h2 style="margin:0">信用卡回饋查詢</h2><div class="small muted">每張卡的通路、回饋 %、上限和方案</div></div><button class="btn ghost" id="cardBrowse" type="button">查看</button></div></div>
     <div class="card" id="uiCard"><h2>介面設定 <small>只影響這台裝置</small></h2>
       <div class="sb mrow0"><div><b style="font-size:14px">首頁最近紀錄</b><div class="small muted">打開 App 時先看清單還是月曆</div></div><div class="seg mini" id="prefHome"><button data-v="list" type="button">清單</button><button data-v="cal" type="button">月曆</button></div></div>
       <div class="sb mrow0"><div><b style="font-size:14px">資產頁預設分頁</b></div><select class="t" id="prefAsset" style="max-width:130px"></select></div>
@@ -544,7 +546,7 @@ body{background:transparent}
   <section id="v-admin" hidden>
     <div class="top"><h1>回饋資料管理</h1><a class="x" href="#me">返回</a></div>
     <div class="card" id="admBulk"><h2>一鍵匯入與更新 <small>用 AI 整理，所有使用者共用</small></h2>
-      <div class="small muted" style="margin-bottom:8px">AI 免費版每分鐘最多查 10 張，所以會一張一張慢慢查（50 張約 6 分鐘），期間請不要關掉 App。「匯入熱門卡」會把台灣常用的 50 張信用卡加進資料庫（已經有的會略過）。「更新全部」會逐張重查所有卡片（包含你自己新增的）：還沒核對過的卡直接換成新資料；你核對過的卡有變動時，會放進下方「待確認的變動」，按核准才上線。AI 依既有知識整理、未上網查證，不保證完全正確。</div>
+      <div class="small muted" style="margin-bottom:8px">AI 免費版每分鐘最多查 10 張，所以會一張一張慢慢查（約 7 秒一張），期間請不要關掉 App。「匯入熱門卡」會把台灣常用的信用卡加進資料庫（已經有的會略過，不花額度）。「更新全部」會逐張重查所有卡片（包含你自己新增的）：還沒核對過的卡直接換成新資料；你核對過的卡有變動時，會放進下方「待確認的變動」，按核准才上線。AI 依既有知識整理、未上網查證，不保證完全正確。</div>
       <div class="grid2"><button class="btn ghost" id="admSeed" type="button">匯入熱門卡</button><button class="btn" id="admRefresh" type="button">更新全部</button></div>
       <div id="admProg" class="small" style="margin-top:8px" hidden></div></div>
     <div class="card"><h2>卡片與回饋 <small>手動新增或修改，存檔後所有使用者馬上看得到</small></h2>
@@ -904,6 +906,7 @@ function renderHome() {
   $('#dues').replaceChildren(...(dues.length ? dues.map(({ a, due, v }) => { const n = daysUntil(due); return el('div', { class: 'due' + (n <= 7 && v > 0 ? ' soon' : '') }, el('div', { class: 'n', text: a.name }), el('div', { class: 'v num', text: money(v) }), el('div', { class: 'd ' + (n <= 7 ? 'exp' : 'muted'), text: `${Number(due.slice(5, 7))}/${Number(due.slice(8))} 扣款・${n === 0 ? '今天' : n + ' 天後'}` })); }) : [el('div', { class: 'empty', text: '在資產頁替信用卡設定扣款日' })]));
   const hv = S.homeView;
   $$('#homeSeg button').forEach(x => x.classList.toggle('on', x.dataset.h === hv));
+  renderMonthRewards();
   const ht = S.homeTab || 'main';
   $$('#homeSw button').forEach(x => x.classList.toggle('on', x.dataset.h === ht));
   $('#homeMain').hidden = ht !== 'main'; $('#homeSplit').hidden = ht !== 'split';
@@ -1210,6 +1213,71 @@ function openSplitForm(kind, bill, preset = {}) {
   m.hidden = false; draw();
 }
 
+// ===== 本月刷卡回饋（估算）=====
+function renderMonthRewards() {
+  const box = $('#rwCard'); if (!box) return;
+  const myCards = S.accounts.filter(a => typeOf(a) === 'card' && a.cardId && CARDS.byId.has(a.cardId));
+  if (!myCards.length) { box.hidden = true; return; }
+  const rows = HanRewards.monthRewards({ month: monthOf(todayStr()), accounts: myCards, cards: CARDS.byId, txns: allTx() });
+  const total = rows.reduce((a, r) => a + r.reward, 0);
+  box.hidden = false;
+  $('#rwTotal').textContent = money(total);
+  put($('#rwList'), rows.length ? rows.map(r => el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(r.card, r.account) },
+      el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || '未設定'}` : '') })),
+      el('div', { class: 'amt num inc', text: money(r.reward) }))) : el('div', { class: 'small muted', text: '這個月還沒有用信用卡記帳。' }),
+    el('div', { class: 'small muted', style: 'margin-top:6px', text: '依你記的每筆消費、當時切的方案和每條回饋上限估算，實際以銀行帳單為準。點卡片可以看回饋規則。' }));
+}
+
+// ===== 卡片回饋規則（看得到每條通路、％數、上限、條件）=====
+const PERIOD_ZH = { month: '每月', quarter: '每季', year: '每年', campaign: '活動期間' };
+function ruleLine(r) {
+  return el('div', { class: 'spl-f', style: 'align-items:flex-start' },
+    el('div', { class: 'n', style: 'font-weight:500' }, el('div', { text: r.channel || '一般消費' }),
+      el('div', { class: 'small muted', style: 'font-weight:400', text: [r.cap_amount ? `${PERIOD_ZH[r.cap_period] || ''}上限 ${money(r.cap_amount)}` : '無上限', r.conditions || '', r.valid_to ? `到 ${r.valid_to.replace(/-/g, '/')}` : ''].filter(Boolean).join('・') })),
+    el('div', { class: 'amt num', text: pctTxt(r.rate) }));
+}
+function openCardInfo(card, acc) {
+  const m = $('#pModal'), box = $('#pBox');
+  const close = () => { m.hidden = true; box.replaceChildren(); };
+  const rules = (card.card_rewards || []).slice().sort((a, b) => b.rate - a.rate);
+  const plans = HanRewards.plansOf(card), base = rules.filter(r => !r.plan);
+  const bank = (CARDS.banks.find(b => b.id === card.bank_id) || {}).name || '';
+  put(box,
+    el('div', { class: 'sb' }, el('b', { text: `${bank} ${card.name}` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
+    el('div', { class: 'small', style: 'margin:4px 0 8px;color:' + (card.verified === false ? 'var(--warn)' : 'var(--muted)'), text: card.verified === false ? 'AI 查詢、尚未核對，可能不完整或過時，請以銀行官網為準。' : '已核對的資料，實際權益以銀行官網公告為準。' + (card.annual_fee ? '年費：' + card.annual_fee : '') }),
+    acc && plans.length ? el('div', { class: 'small', style: 'margin-bottom:6px', text: `你目前設定的方案：${acc.cardPlan || '未設定'}（在資產頁編輯這張卡可以改）` }) : null,
+    rules.length ? null : el('div', { class: 'small muted', text: '這張卡還沒有回饋資料。' }),
+    base.length ? [el('h3', { style: 'margin:10px 0 2px;font-size:15px', text: plans.length ? '不分方案都適用' : '回饋規則' }), ...base.map(ruleLine)] : null,
+    ...plans.map(p => [el('h3', { style: 'margin:12px 0 2px;font-size:15px', text: `方案：${p}` + (acc && acc.cardPlan === p ? '（目前）' : '') }), ...rules.filter(r => r.plan === p).map(ruleLine)]),
+    card.source_url ? el('a', { class: 'small', href: card.source_url, target: '_blank', rel: 'noopener', style: 'display:inline-block;margin-top:10px;color:var(--accent)', text: '對照銀行官網' }) : null);
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.hidden = false;
+}
+// 所有信用卡的回饋（可搜尋）
+function openCardBrowser() {
+  const m = $('#pModal'), box = $('#pBox');
+  const close = () => { m.hidden = true; box.replaceChildren(); };
+  const q = el('input', { class: 't', id: 'cbQ', placeholder: '搜尋卡名或銀行，例如 CUBE、玉山' });
+  const list = el('div', { id: 'cbList' });
+  const draw = () => {
+    const k = q.value.trim().toLowerCase();
+    const bankName = (id) => (CARDS.banks.find(b => b.id === id) || {}).name || '';
+    const cards = CARDS.list.filter(c => !k || (c.name + bankName(c.bank_id)).toLowerCase().includes(k))
+      .sort((a, b) => bankName(a.bank_id).localeCompare(bankName(b.bank_id), 'zh-Hant') || a.name.localeCompare(b.name, 'zh-Hant'));
+    put(list, cards.length ? cards.map(c => {
+      const top = Math.max(0, ...(c.card_rewards || []).map(r => Number(r.rate)));
+      return el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(c) },
+        el('div', { class: 'n' }, el('div', { text: c.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: bankName(c.bank_id) + (c.verified === false ? '・AI 查詢，未核對' : '') })),
+        el('div', { class: 'small muted', text: '最高' }), el('div', { class: 'amt num', text: pctTxt(top) }));
+    }) : el('div', { class: 'small muted', text: '找不到。可以在新增信用卡帳戶時讓 AI 查。' }));
+  };
+  q.addEventListener('input', draw);
+  put(box, el('div', { class: 'sb' }, el('b', { text: `信用卡回饋查詢（${CARDS.list.length} 張）` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })), el('div', { style: 'margin:8px 0' }, q), list);
+  draw();
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.hidden = false;
+}
+
 function renderHomeCal() {
   $$('.mLbl').forEach(x => x.textContent = `${S.month.slice(0, 4)} 年 ${Number(S.month.slice(5))} 月`);
   if (!S.homeDay || monthOf(S.homeDay) !== S.month) S.homeDay = monthOf(todayStr()) === S.month ? todayStr() : S.month + '-01';
@@ -1414,7 +1482,8 @@ function renderAssets() {
     const row = el('div', { class: 'acc' },
       el('div', { class: 'h' },
         el('div', { class: 'n' }, el('b', {}, a.name, a.inNW === false ? el('span', { class: 'tag', text: '不計入' }) : null), meta ? el('span', { text: meta }) : null),
-        inp, el('button', { class: 'x', type: 'button', text: editingId === a.id ? '收起' : '編輯', onclick: () => { editingId = editingId === a.id ? null : a.id; renderAssets(); } })));
+        inp, typeOf(a) === 'card' && a.cardId && CARDS.byId.get(a.cardId) ? el('button', { class: 'x', type: 'button', text: '回饋', onclick: () => openCardInfo(CARDS.byId.get(a.cardId), a) }) : null,
+        el('button', { class: 'x', type: 'button', text: editingId === a.id ? '收起' : '編輯', onclick: () => { editingId = editingId === a.id ? null : a.id; renderAssets(); } })));
     if (editingId === a.id) row.append(accEditor(a, () => { editingId = null; renderAssets(); }));
     panel.append(row);
   }
@@ -1727,7 +1796,8 @@ function cardPicker(cur, curPlan) {
     el('summary', { class: 'small', text: '清單裡沒有我的卡？讓 AI 查' }),
     el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '先選銀行再輸入卡名。已經有人查過的卡會直接使用，不用重查。AI 依既有知識整理、未上網查證，不保證完全正確，請對照銀行官網。' }),
     el('div', { class: 'flex' }, q, go), picks, msg);
-  return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), planRow, ai), value: () => card.value, plan: () => (planRow.hidden ? '' : plan.value) };
+  const info = el('button', { class: 'x', type: 'button', style: 'margin-top:4px', text: '看這張卡的回饋規則', onclick: () => { const c = CARDS.byId.get(card.value); if (c) openCardInfo(c); else toast('先選一張卡'); } });
+  return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), info, planRow, ai), value: () => card.value, plan: () => (planRow.hidden ? '' : plan.value) };
 }
 function renderRec() {
   const box = $('#recBox'); if (!box) return;
@@ -1828,18 +1898,16 @@ function showPolicy(r, close) {
 // ===== 一鍵匯入熱門卡、一鍵更新全部 =====
 // 台灣常用的信用卡（銀行代碼、卡名）；AI 查不到的卡不會加入
 const POPULAR_CARDS = [
-  ['cathay', 'CUBE卡'], ['cathay', '亞洲萬里通聯名卡'], ['cathay', '蝦皮購物聯名卡'], ['cathay', '長榮航空聯名卡'],
-  ['taishin', 'Richart卡'], ['taishin', '@GoGo卡'], ['taishin', '玫瑰Giving卡'], ['taishin', '太陽卡'], ['taishin', 'FlyGo卡'], ['taishin', '街口聯名卡'], ['taishin', '黑狗卡'], ['taishin', '新光三越聯名卡'],
+  ['cathay', 'CUBE卡'], ['cathay', '蝦皮購物聯名卡'],
+  ['taishin', 'Richart卡'], ['taishin', '新光三越聯名卡'],
   ['esun', 'Unicard'], ['esun', 'U Bear卡'], ['esun', 'Pi拍錢包信用卡'], ['esun', '熊本熊卡'],
-  ['ctbc', 'uniopen聯名卡'], ['ctbc', 'LINE Pay卡'], ['ctbc', '中華航空聯名卡'], ['ctbc', 'ALL ME卡'], ['ctbc', '和泰Pay聯名卡'], ['ctbc', '中油聯名卡'],
-  ['sinopac', 'DAWAY卡'], ['sinopac', '大戶卡'], ['sinopac', 'SPORT卡'], ['sinopac', '幣倍卡'], ['sinopac', '現金回饋JCB卡'], ['sinopac', '保倍卡'],
+  ['ctbc', 'uniopen聯名卡'], ['ctbc', 'LINE Pay卡'], ['ctbc', '中華航空聯名卡'], ['ctbc', 'ALL ME卡'],
+  ['sinopac', 'DAWAY卡'], ['sinopac', 'DAWHO現金回饋卡'], ['sinopac', 'SPORT卡'], ['sinopac', '幣倍卡'], ['sinopac', '現金回饋JCB卡'],
   ['hsbc', '現金回饋御璽卡'], ['hsbc', '匯鑽卡'], ['hsbc', '旅人無限卡'], ['hsbc', 'Live+現金回饋卡'],
-  ['ubot', '吉鶴卡'], ['ubot', '賴點卡'], ['ubot', '綠卡'],
-  ['fubon', 'J卡'], ['fubon', 'Costco聯名卡'], ['fubon', 'momo卡'], ['fubon', '鑽保卡'],
-  ['dbs', 'eco永續卡'], ['dbs', '飛行世界商務卡'],
-  ['firstbank', 'iLEO卡'], ['firstbank', 'LIVINGGREEN綠活卡'],
-  ['mega', 'Mega One卡'], ['hncb', 'i網購生活卡'], ['hncb', 'SnY卡'],
-  ['feib', '樂家+卡'], ['feib', '快樂信用卡'], ['skbank', 'OU卡'], ['tcb', '利High卡'],
+  ['ubot', '吉鶴卡'], ['ubot', '賴點卡'], ['ubot', '綠卡'], ['ubot', 'LINE Bank聯名卡'],
+  ['fubon', 'J卡'], ['fubon', 'Costco聯名卡'], ['fubon', 'momo卡'],
+  ['dbs', 'eco永續卡'], ['firstbank', 'iLEO卡'], ['firstbank', 'LIVINGGREEN綠活卡'],
+  ['hncb', 'i網購生活卡'], ['hncb', 'SnY卡'], ['feib', '樂家+卡'],
 ];
 let bulkBusy = false;
 async function runBulk(kind) {
@@ -2645,6 +2713,8 @@ async function start() {
   route(); window.addEventListener('hashchange', route);
   $('#fab').addEventListener('click', () => openSheet(null, view === 'ledger' && S.selDay ? S.selDay : (view === 'home' && S.homeView === 'cal' && S.homeDay ? S.homeDay : null)));
   $('#admSeed').addEventListener('click', () => runBulk('seed'));
+  $('#admSeed').textContent = `匯入熱門卡（${POPULAR_CARDS.length} 張）`;
+  $('#cardBrowse').addEventListener('click', () => { if (!CARDS.loaded) { toast('卡片資料讀取中，稍等一下'); return; } openCardBrowser(); });
   $('#admRefresh').addEventListener('click', () => { if (confirm('逐張重查所有卡片，大約要幾分鐘，期間請不要關掉 App。開始嗎？')) runBulk('refresh'); });
   $$('#homeSeg button').forEach(x => x.addEventListener('click', () => { S.homeView = x.dataset.h; try { localStorage.setItem('homeView', S.homeView); } catch {} renderHome(); }));
   try { S.homeTab = localStorage.getItem('homeTab') || 'main'; } catch {}

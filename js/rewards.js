@@ -199,6 +199,35 @@
     return out.sort((a, b) => b.rate - a.rate || b.reward - a.reward);
   }
 
-  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf };
+  /**
+   * 某個月刷卡拿到的回饋（估算）：每筆用當時切的方案找最適用的規則，並照每條規則的上限扣掉。
+   * 回傳 [{ account, card, spend, reward, n }]，依回饋高到低
+   */
+  function monthRewards({ month, accounts, cards, txns }) {
+    const used = new Map(), per = new Map();
+    const list = txns.filter(t => t.type === 'expense' && (t.date || '').slice(0, 7) === month)
+      .slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || 0) - (b.createdAt || 0));
+    for (const t of list) {
+      const acc = accounts.find(a => a.id === t.account); if (!acc || !acc.cardId) continue;
+      const card = cards.get(acc.cardId); if (!card) continue;
+      const plans = plansOf(card), plan = plans.length ? (acc.cardPlan || null) : undefined;
+      const amt = Number(t.amount) || 0;
+      const row = per.get(acc.id) || { account: acc, card, spend: 0, reward: 0, n: 0 };
+      row.spend += amt; row.n++;
+      const rule = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
+      if (rule) {
+        let r = amt * Number(rule.rate) / 100;
+        if (rule.cap_amount) {
+          const key = acc.id + '|' + rule.id + '|' + (rule.cap_period === 'campaign' ? 'c' : periodStart(rule.cap_period || 'month', t.date));
+          const u = used.get(key) || 0; r = Math.max(0, Math.min(r, Number(rule.cap_amount) - u)); used.set(key, u + r);
+        }
+        row.reward += r;
+      }
+      per.set(acc.id, row);
+    }
+    return [...per.values()].sort((a, b) => b.reward - a.reward);
+  }
+
+  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf, monthRewards };
   if (typeof module !== 'undefined') module.exports = api; else root.HanRewards = api;
 })(typeof window !== 'undefined' ? window : globalThis);
