@@ -520,6 +520,7 @@ body{background:transparent}
     </div>
     <div class="card"><h2>關於</h2>
       <div class="sb mrow0"><span>隱私權政策與個資告知</span><a class="x" href="privacy.html" target="_blank">查看</a></div>
+      <div class="small muted" id="appVer" style="margin-top:6px"></div>
       <div class="sb mrow0"><span>問題回報與建議</span><a class="x" href="mailto:hanbouger@gmail.com?subject=han%20in%20%E8%BC%B8%E5%85%A5%E8%A8%98%E5%B8%B3%20%E5%9B%9E%E5%A0%B1">寫信給我們</a></div>
       <div class="sb mrow0"><span>版本</span><span class="small muted" id="appVer">2026.11.05</span></div>
     </div>
@@ -662,6 +663,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
+const APP_VER = 'v30';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -1217,15 +1219,17 @@ function openSplitForm(kind, bill, preset = {}) {
 // ===== 本月刷卡回饋（估算）=====
 function renderMonthRewards() {
   const box = $('#rwCard'); if (!box) return;
-  const myCards = S.accounts.filter(a => typeOf(a) === 'card' && a.cardId && CARDS.byId.has(a.cardId));
-  if (!myCards.length) { box.hidden = true; return; }
+  const myCards = myCardAccounts(), loose = unlinkedCardAccounts();
+  if (!CARDS.loaded || (!myCards.length && !loose.length)) { box.hidden = true; return; }
+  const looseNote = loose.length ? el('div', { class: 'small', style: 'margin-top:6px;color:var(--exp);cursor:pointer', onclick: () => askLinkCard(loose[0]), text: `${loose.map(a => a.name).join('、')} 還沒對應到卡片，點這裡選是哪張卡才能算回饋` }) : null;
+  if (!myCards.length) { box.hidden = false; $('#rwTotal').textContent = money(0); put($('#rwList'), looseNote); return; }
   const rows = HanRewards.monthRewards({ month: monthOf(todayStr()), accounts: myCards, cards: CARDS.byId, txns: allTx() });
   const total = rows.reduce((a, r) => a + r.reward, 0);
   box.hidden = false;
   $('#rwTotal').textContent = money(total);
   put($('#rwList'), rows.length ? rows.map(r => el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(r.card, r.account) },
       el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || '未設定'}` : '') + (() => { const u = HanRewards.cardUsage({ account: r.account, card: r.card, txns: allTx(), date: todayStr() }); const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0]; return near ? (near.left <= 0 ? `・${near.rule.channel}已拿滿` : `・${near.rule.channel}還能拿 ${money(near.left)}`) : ''; })() })),
-      el('div', { class: 'amt num inc', text: money(r.reward) }))) : el('div', { class: 'small muted', text: '這個月還沒有用信用卡記帳。' }),
+      el('div', { class: 'amt num inc', text: money(r.reward) }))) : el('div', { class: 'small muted', text: '這個月還沒有用信用卡記帳。' }), looseNote,
     el('div', { class: 'small muted', style: 'margin-top:6px', text: '依你記的每筆消費、當時切的方案和每條回饋上限估算，實際以銀行帳單為準。點卡片可以看每個通路已拿多少、還剩多少額度。' }));
 }
 
@@ -1238,6 +1242,40 @@ function ruleLine(r) {
     el('div', { class: 'amt num', text: pctTxt(r.rate) }));
 }
 function myCardAccounts() { return S.accounts.filter(a => typeOf(a) === 'card' && a.cardId && CARDS.byId.has(a.cardId)); }
+function unlinkedCardAccounts() { return S.accounts.filter(a => typeOf(a) === 'card' && !(a.cardId && CARDS.byId.has(a.cardId))); }
+// 依帳戶名稱自動對應卡片（例如「國泰 CUBE 卡」→ CUBE卡），使用者自己選過「不對應」就不動
+const BANK_WORDS = ['國泰世華', '國泰', '中國信託', '中信', '台北富邦', '富邦', '台新', '永豐', '玉山', '星展', '國泰', '第一銀行', '第一', '華南', '滙豐', '匯豐', '遠東商銀', '遠東', '聯邦', '新光', '凱基', '元大', '兆豐', '合作金庫', '合庫', '彰化', '彰銀', '上海商銀', '樂天', '將來', 'line bank', '銀行'];
+function cardKey(s) {
+  let k = String(s || '').toLowerCase().replace(/[\s・·\-_()（）]/g, '');
+  for (const b of BANK_WORDS) k = k.split(b.replace(/\s/g, '')).join('');
+  return k.replace(/(現金回饋|聯名|信用)?卡$/, '').replace(/信用卡|聯名卡/g, '');
+}
+const CARD_ALIAS = [[/大戶|大大|dawho/i, /dawho/i, '大大'], [/cube/i, /cube/i], [/熊本熊/, /熊本熊/], [/richart|@gogo|gogo/i, /richart/i]];
+function guessCard(name) {
+  for (const [re, cre, plan] of CARD_ALIAS) if (re.test(name)) { const c = CARDS.list.find(x => cre.test(x.name)); if (c) return { card: c, plan: plan && HanRewards.plansOf(c).includes(plan) ? plan : null }; }
+  const k = cardKey(name); if (k.length < 2) return null;
+  const hits = CARDS.list.filter(c => { const ck = cardKey(c.name); return ck.length >= 2 && (ck === k || k.includes(ck) || ck.includes(k)); });
+  return hits.length === 1 ? { card: hits[0], plan: null } : null;
+}
+const autoLinkTried = new Set();
+async function autoLinkCards() {
+  if (!CARDS.loaded || !S.db) return;
+  for (const a of S.accounts) {
+    if (typeOf(a) !== 'card' || a.cardLinkOff || (a.cardId && CARDS.byId.has(a.cardId)) || autoLinkTried.has(a.id)) continue;
+    autoLinkTried.add(a.id);
+    const g = guessCard(a.name); if (!g) continue;
+    const up = { cardId: g.card.id }; if (g.plan && !a.cardPlan) up.cardPlan = g.plan;
+    try { await S.db.doc('accounts/' + a.id).update(up); Object.assign(a, up); } catch {}
+  }
+  render();
+}
+function askLinkCard(a) {
+  $('#pModal').hidden = true; $('#pBox').replaceChildren();
+  editingId = a.id; S.assetTab = 'card';
+  if (location.hash === '#assets') renderAssets(); else location.hash = '#assets';
+  setTimeout(() => { const l = [...document.querySelectorAll('#view-assets label, label')].find(x => x.textContent.startsWith('這是哪張卡') && x.offsetParent); l && l.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 350);
+  toast('在「這是哪張卡？」選好卡片後按儲存');
+}
 function usageBlock(card, acc) {
   const u = HanRewards.cardUsage({ account: acc, card, txns: allTx(), date: todayStr() });
   const rows = u.rules.filter(x => x.n || x.cap != null);
@@ -1290,15 +1328,22 @@ function openCardBrowser() {
     const rw = new Map([...mine].map(([cid, ac]) => [cid, HanRewards.cardUsage({ account: ac, card: CARDS.byId.get(cid), txns: allTx(), date: todayStr() }).monthReward]));
     cards.sort((a, b) => (mine.has(b.id) ? 1 : 0) - (mine.has(a.id) ? 1 : 0) || (rw.get(b.id) || 0) - (rw.get(a.id) || 0)); // 我的卡在前，回饋多的排前面
     const firstOther = cards.findIndex(c => !mine.has(c.id));
-    put(list, cards.length ? cards.flatMap((c, i) => {
-      const head = i === 0 && mine.has(c.id) ? [el('h3', { style: 'margin:4px 0;font-size:15px', text: '我的卡' })] : i === firstOther ? [el('h3', { style: 'margin:12px 0 4px;font-size:15px', text: mine.size ? '其他卡' : '全部卡片' })] : [];
+    const loose = k ? [] : unlinkedCardAccounts();
+    const looseRows = loose.map(a => el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => askLinkCard(a) },
+      el('div', { class: 'n' }, el('div', { text: a.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: '還沒對應到卡片，算不出回饋。點這裡選是哪張卡' })),
+      el('div', { class: 'small', style: 'color:var(--exp)', text: '未對應' })));
+    const myHead = el('h3', { style: 'margin:4px 0;font-size:15px', text: '我的卡' });
+    const nMine = firstOther < 0 ? cards.length : firstOther;
+    put(list, (loose.length && !nMine ? [myHead, ...looseRows] : []), cards.length ? cards.flatMap((c, i) => {
+      const head = i === 0 && mine.has(c.id) ? [myHead] : i === firstOther ? [el('h3', { style: 'margin:12px 0 4px;font-size:15px', text: mine.size || loose.length ? '其他卡' : '全部卡片' })] : [];
+      const tail = nMine && i === nMine - 1 ? looseRows : [];
       const a = mine.get(c.id);
       if (a) {
         const u = HanRewards.cardUsage({ account: a, card: c, txns: allTx(), date: todayStr() });
         const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0];
         return [...head, el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(c, a) },
           el('div', { class: 'n' }, el('div', { text: a.name + (a.name !== c.name ? `（${c.name}）` : '') }), el('div', { class: 'small muted', style: 'font-weight:400', text: `本月刷 ${money(u.monthSpend)}` + (near ? (near.left <= 0 ? `・${near.rule.channel} 已拿滿` : `・${near.rule.channel} 還能拿 ${money(near.left)}`) : '') })),
-          el('div', { class: 'amt num inc', text: money(u.monthReward) }))];
+          el('div', { class: 'amt num inc', text: money(u.monthReward) })), ...tail];
       }
       return [...head, (() => {
       const top = Math.max(0, ...(c.card_rewards || []).map(r => Number(r.rate)));
@@ -1427,7 +1472,7 @@ function accEditor(acc, onDone, preset) {
   saveB.addEventListener('click', async () => {
     const n = name.value.trim(); if (!n) { toast('請輸入名稱'); return; }
     const t = type.value, num = (x) => { const v = Number(String(x.value).replace(/,/g, '')); return Number.isFinite(v) ? v : 0; };
-    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null, cardPlan: t === 'card' ? (cp.plan() || null) : null };
+    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null, cardPlan: t === 'card' ? (cp.plan() || null) : null, cardLinkOff: t === 'card' && !cp.value() };
     if (TYPES[t].flow) { data.currency = 'TWD'; data.fx = null; data.shares = null; data.price = null; const v = num(val); if (isNew || Math.round(valueOf(acc)) !== Math.round(v) || typeOf(acc) !== t) { data.base = v; data.baseAt = Date.now(); } }
     else { data.currency = cur.value; data.fx = cur.value === 'USD' ? (num(fx) || 32.6) : null; data.base = num(val); data.baseAt = Date.now();
       const hasS = ['tw_stock', 'us_stock'].includes(t) && shares.value !== '' && price.value !== '';
@@ -1786,7 +1831,7 @@ async function loadCards() {
   try {
     const cat = await HanCloud.loadCatalog();
     CARDS.banks = cat.banks || []; CARDS.list = cat.cards || [];
-    CARDS.byId = new Map(CARDS.list.map(c => [c.id, c])); CARDS.loaded = true; render();
+    CARDS.byId = new Map(CARDS.list.map(c => [c.id, c])); CARDS.loaded = true; render(); autoLinkCards();
   } catch (e) { console.warn('卡片資料讀不到', e); }
 }
 const bankName = (id) => (CARDS.banks.find(b => b.id === id) || {}).name || '';
@@ -2885,6 +2930,7 @@ async function boot(sess) {
     subscribeRecent(); render();
     if (S.settings.remind) scheduleReminders(true);
     setTimeout(autoPostFixed, 1500);
+    autoLinkCards();
   }, () => status('帳戶資料讀不到。'));
   db.doc('settings/main').onSnapshot(snap => { if (snap.exists) S.settings = { ...S.settings, ...snap.data() }; render(); }, () => {});
   db.doc('settings/split').onSnapshot(snap => { S.split = snap.exists ? { friends: [], bills: [], ...snap.data() } : { friends: [], bills: [] }; if (S.homeTab === 'split' && $('#pModal').hidden) renderSplit(); }, () => {});
@@ -2893,8 +2939,20 @@ async function boot(sess) {
 start();
 // 網頁版：註冊離線快取（App 版不需要）
 if (!HanCloud.isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').then((reg) => {
+    // 從背景切回來時檢查有沒有新版；有新版就自動重新整理（正在填表單時先不打斷）
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+  }).catch(() => {}));
+  let hadCtl = !!navigator.serviceWorker.controller, reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadCtl) { hadCtl = true; return; }
+    const go = () => { if (reloaded) return; reloaded = true; location.reload(); };
+    const busy = () => !$('#pModal').hidden || $('#sheet').classList.contains('on');
+    if (!busy()) go(); else { toast('有新版本，關掉這個視窗後會自動更新'); const t = setInterval(() => { if (!busy()) { clearInterval(t); go(); } }, 2000); }
+  });
 }
+$('#appVer') && ($('#appVer').textContent = `版本 ${APP_VER}・${HanCloud.isNative ? 'App 版' : '網頁版'}`);
 })();
 </script>
 </body>

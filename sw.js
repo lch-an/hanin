@@ -1,7 +1,7 @@
 // han in 輸入記帳：讓「加入主畫面」後的網頁版沒網路也能打開
 // 只快取 App 自己的檔案；記帳資料走 Supabase，不經過這裡。
 // 改了 www 裡的檔案後，把 VERSION 加 1，使用者下次打開就會拿到新版。
-const VERSION = 'hanin-v29';
+const VERSION = 'hanin-v30';
 const FILES = [
   './', 'index.html', 'config.js', 'privacy.html', 'manifest.webmanifest',
   'vendor/supabase.js', 'js/cloud.js', 'js/rewards.js',
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return; // Supabase 等外部請求不處理
   // 先拿網路上的新版，沒網路才用快取，避免使用者卡在舊版
   e.respondWith(
-    fetch(req)
+    (req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req, { cache: 'no-cache' })) // 每次都跟伺服器確認是不是最新版
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
         return res;
