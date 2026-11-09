@@ -58,6 +58,11 @@ button{font:inherit;color:inherit}
 .list{list-style:none;margin:0;padding:0}
 .list li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list li:last-child{border-bottom:0}
+.list li.sw{position:relative;overflow:hidden;padding:0;display:block}
+.list li.sw>.swin{display:flex;align-items:center;gap:12px;padding:10px 2px;transition:transform .2s ease;will-change:transform}
+.list li.dayitems .list li.sw{padding:0}.list li.dayitems .list li.sw>.swin{padding:8px 2px}
+.list li.sw.drag>.swin,.list li.sw.drag>.swdel{transition:none}
+.swdel{position:absolute;right:0;top:0;bottom:0;width:0;overflow:hidden;border:0;background:var(--exp);color:#fff;font-size:15px;font-weight:600;white-space:nowrap;transition:width .2s ease;cursor:pointer;padding:0}
 .ico{width:38px;height:38px;border-radius:12px;flex:0 0 38px;display:flex;align-items:center;justify-content:center;font-size:19px}
 .grow{flex:1;min-width:0}
 .grow .a{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -464,7 +469,7 @@ body{background:transparent}
 
   <!-- 我的 -->
   <section id="v-me" hidden>
-    <div class="top"><h1>我的</h1><span class="small" id="syncLbl"></span></div>
+    <div class="top"><h1>設定</h1><span class="small" id="syncLbl"></span></div>
     <div class="card" id="meCard">
       <div class="prof"><div class="avatar" id="meAvatar"></div><div class="grow"><b id="meName" style="font-size:17px"></b><div class="small muted" id="meEmail"></div></div><button class="btn ghost" id="logoutBtn" type="button" style="white-space:nowrap">登出</button></div>
       <div class="small muted" style="margin-top:8px">記帳資料會自動同步到這個帳號；網路斷線時先存在手機，連上後再上傳。</div>
@@ -564,7 +569,7 @@ body{background:transparent}
   <a href="#ledger" data-v="ledger" draggable="false">明細</a>
   <span class="fab"><button id="fab" class="ios-glass-prominent" aria-label="記一筆">＋</button></span>
   <a href="#assets" data-v="assets" draggable="false">資產</a>
-  <a href="#me" data-v="me" draggable="false">我的</a>
+  <a href="#me" data-v="me" draggable="false">設定</a>
 </div></nav>
 
 <div class="backdrop" id="backdrop"></div>
@@ -663,7 +668,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v34';
+const APP_VER = 'v35';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -882,10 +887,39 @@ function txRow(t) {
   const isE = t.type === 'expense', isI = t.type === 'income';
   const title = t.type === 'transfer' ? t.category : (t.note ? `${t.category}・${t.note}` : t.category);
   const sub = t.type === 'transfer' ? `${accName(t.account)} → ${accName(t.to)}` : (t.via ? `${t.via}・${accName(t.account)}` : accName(t.account));
-  return el('li', { onclick: () => openSheet(t) },
-    el('span', { class: 'dotc', style: `background:${c.c}` }),
-    el('div', { class: 'grow' }, el('div', { class: 'a', text: title }), el('div', { class: 'b', text: sub })),
-    el('div', { class: 'amtc ' + (isE ? 'exp' : isI ? 'inc' : 'muted'), text: (isE ? '−' : isI ? '+' : '') + fmt.format(t.amount) }));
+  const li = el('li', { class: 'sw', 'data-tx': t.id, onclick: () => { if (li._moved) { li._moved = false; return; } if (li._open) { swClose(li); return; } openSheet(t); } },
+    el('div', { class: 'swin' },
+      el('span', { class: 'dotc', style: `background:${c.c}` }),
+      el('div', { class: 'grow' }, el('div', { class: 'a', text: title }), el('div', { class: 'b', text: sub })),
+      el('div', { class: 'amtc ' + (isE ? 'exp' : isI ? 'inc' : 'muted'), text: (isE ? '−' : isI ? '+' : '') + fmt.format(t.amount) })),
+    el('button', { class: 'swdel', type: 'button', text: '刪除', onclick: async (e) => {
+      e.stopPropagation();
+      if (t.split) { swClose(li); toast('這筆是分帳自動記的，請到分帳裡修改或刪除'); return; }
+      try { await S.db.doc('txns/' + t.id).delete(); toast('已刪除'); } catch { toast('刪除失敗'); swClose(li); }
+    } }));
+  swSetup(li);
+  return li;
+}
+// 記帳紀錄左滑出現「刪除」（像刪除對話一樣）
+const SW_W = 84;
+let swOpenLi = null;
+function swSet(li, x) { li.firstChild.style.transform = x ? `translateX(${x}px)` : ''; li.lastChild.style.width = Math.max(0, -x) + 'px'; }
+function swClose(li) { if (!li) return; li._open = false; swSet(li, 0); if (swOpenLi === li) swOpenLi = null; }
+function swSetup(li) {
+  let x0 = 0, y0 = 0, dx = 0, mode = null, base = 0;
+  li.addEventListener('touchstart', (e) => { const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; dx = 0; mode = null; base = li._open ? -SW_W : 0; if (swOpenLi && swOpenLi !== li) swClose(swOpenLi); }, { passive: true });
+  li.addEventListener('touchmove', (e) => {
+    const p = e.touches[0], mx = p.clientX - x0, my = p.clientY - y0;
+    if (!mode) { if (Math.abs(mx) < 8 && Math.abs(my) < 8) return; mode = Math.abs(mx) > Math.abs(my) && (mx < 0 || li._open) ? 'h' : 'v'; if (mode === 'h') { li.classList.add('drag'); window.__rowSwipe = true; } }
+    if (mode !== 'h') return;
+    if (e.cancelable) e.preventDefault();
+    dx = Math.min(0, Math.max(-SW_W * 1.6, base + mx)); swSet(li, dx);
+  }, { passive: false });
+  li.addEventListener('touchend', () => {
+    if (mode !== 'h') return;
+    li.classList.remove('drag'); li._moved = true; setTimeout(() => { li._moved = false; window.__rowSwipe = false; }, 50);
+    if (dx < -SW_W / 2) { li._open = true; swOpenLi = li; swSet(li, -SW_W); } else swClose(li);
+  });
 }
 
 // ---------- views ----------
@@ -965,6 +999,8 @@ function splOpenItems(sp, fid) {
   }
   return out.sort((x, y) => (x.b.date || '').localeCompare(y.b.date || '') || (x.b.ts || 0) - (y.b.ts || 0));
 }
+// 結清、借錢、還錢的錢只會進出銀行或現金，不會進信用卡
+const moneyAccounts = () => payables().filter(a => typeOf(a) !== 'card');
 // 標記某人在某件事已結清；跟我有關的會同時記一筆轉帳（他還我：朋友欠我→帳戶；我還他：帳戶→我欠朋友）
 async function splMarkPaid(b, who, accId, sync) {
   const v = Number((b.shares || {})[who]) || 0; let txn = null;
@@ -1101,10 +1137,10 @@ function openSettleFriend(fid) {
   const m = $('#pModal'), box = $('#pBox');
   const close = () => { m.hidden = true; box.replaceChildren(); };
   const items = splOpenItems(splData(), fid), sel = new Set(items.map(x => x.b.id));
-  let acc = (payables()[0] || {}).id || '', sync = S.accounts.length > 0;
+  let acc = (moneyAccounts()[0] || {}).id || '', sync = S.accounts.length > 0;
   const draw = () => {
     const net = items.filter(x => sel.has(x.b.id)).reduce((a, x) => a + x.v, 0);
-    const accSel = el('select', { class: 't' }, ...payables().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
+    const accSel = el('select', { class: 't' }, ...moneyAccounts().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
     const sw = el('input', { type: 'checkbox' }); sw.checked = sync; sw.addEventListener('change', () => { sync = sw.checked; draw(); });
     put(box,
       el('div', { class: 'sb' }, el('b', { text: `和 ${splName(fid)} 結清` }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
@@ -1142,11 +1178,11 @@ function openSettleAll() {
   const open = (splData().bills || []).filter(b => !['recv', 'pay'].includes(b.kind) && Object.keys(b.shares || {}).some(p => p !== b.payer && !splPaid(b, p)))
     .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.ts || 0) - (b.ts || 0));
   const sel = new Set(open.filter(b => b.kind === 'bill').map(b => b.id)); // 借錢預設不勾
-  let acc = (payables()[0] || {}).id || '', sync = S.accounts.length > 0;
+  let acc = (moneyAccounts()[0] || {}).id || '', sync = S.accounts.length > 0;
   const draw = () => {
     const sp0 = splData(), plan = splSettle({ ...sp0, bills: (sp0.bills || []).filter(b => sel.has(b.id)) });
     const net = plan.filter(x => x.from === 'me' || x.to === 'me').reduce((a, x) => a + (x.to === 'me' ? x.amount : -x.amount), 0);
-    const accSel = el('select', { class: 't' }, ...payables().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
+    const accSel = el('select', { class: 't' }, ...moneyAccounts().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
     const sw = el('input', { type: 'checkbox' }); sw.checked = sync; sw.addEventListener('change', () => { sync = sw.checked; draw(); });
     put(box,
       el('div', { class: 'sb' }, el('b', { text: '照最少轉帳結清' }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
@@ -1277,7 +1313,9 @@ function openSplitForm(kind, bill, preset = {}) {
     const iPay = F2.kind === 'bill' ? F2.payer === 'me' : ['lend', 'pay'].includes(F2.kind);
     const iGet = ['borrow', 'recv'].includes(F2.kind);
     const showSync = F2.kind === 'bill' ? (F2.payer === 'me' || F2.people.includes('me')) : true;
-    const accSel = el('select', { class: 't' }, ...payables().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = F2.acc; accSel.addEventListener('change', () => F2.acc = accSel.value);
+    const accList = F2.kind === 'bill' ? payables() : moneyAccounts();
+    if (!accList.some(a => a.id === F2.acc)) F2.acc = (accList[0] || {}).id || '';
+    const accSel = el('select', { class: 't' }, ...accList.map(a => el('option', { value: a.id, text: a.name }))); accSel.value = F2.acc; accSel.addEventListener('change', () => F2.acc = accSel.value);
     const catSel = el('select', { class: 't' }, ...CATS.expense.filter(c => !nonLiving().has(c[0])).map(c => el('option', { value: c[0], text: c[0] }))); catSel.value = F2.cat; catSel.addEventListener('change', () => F2.cat = catSel.value);
     const sync = el('input', { type: 'checkbox' }); sync.checked = F2.sync; sync.addEventListener('change', () => { F2.sync = sync.checked; draw(); });
     put(box,
@@ -1314,7 +1352,7 @@ function openSplitForm(kind, bill, preset = {}) {
             return el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(p)} → ${splName(bill.payer)}` }), el('div', { class: 'amt num', text: money(bill.shares[p]) }),
               el('button', { class: 'btn ' + (done ? 'ghost' : ''), type: 'button', style: 'padding:6px 10px;font-size:13px', text: done ? '已結清（取消）' : '標記結清', onclick: async () => {
                 const sp2 = splData(), cur = sp2.bills.find(x => x.id === bill.id); if (!cur) return;
-                try { if (done) await splUnmarkPaid(cur, p); else await splMarkPaid(cur, p, F2.acc || (payables()[0] || {}).id, F2.sync); } catch { toast('同步記帳失敗'); }
+                try { if (done) await splUnmarkPaid(cur, p); else await splMarkPaid(cur, p, (moneyAccounts().find(a => a.id === F2.acc) || moneyAccounts()[0] || {}).id, F2.sync); } catch { toast('同步記帳失敗'); }
                 Object.assign(bill, cur);
                 await saveSplit({ ...sp2, bills: sp2.bills.map(x => x.id === cur.id ? cur : x) }, done ? '已改回未結清' : `${splName(p)} 這筆已結清`); draw();
               } }));
@@ -1373,6 +1411,7 @@ function renderMonthRewards() {
   const looseNote = loose.length ? el('div', { class: 'small', style: 'margin-top:6px;color:var(--exp);cursor:pointer', onclick: () => askLinkCard(loose[0]), text: `${loose.map(a => a.name).join('、')} 還沒對應到卡片，點這裡選是哪張卡才能算回饋` }) : null;
   if (!myCards.length) { box.hidden = false; $('#rwTotal').textContent = money(0); put($('#rwList'), looseNote); return; }
   const rows = HanRewards.monthRewards({ month: monthOf(todayStr()), accounts: myCards, cards: CARDS.byId, txns: allTx() });
+  for (const a of myCards) if (!rows.some(r => r.account.id === a.id)) rows.push({ account: a, card: CARDS.byId.get(a.cardId), spend: 0, reward: 0, n: 0 }); // 這個月還沒刷的卡也列出來
   const total = rows.reduce((a, r) => a + r.reward, 0);
   box.hidden = false;
   $('#rwTotal').textContent = money(total);
@@ -1399,7 +1438,9 @@ function cardKey(s) {
   for (const b of BANK_WORDS) k = k.split(b.replace(/\s/g, '')).join('');
   return k.replace(/(現金回饋|聯名|信用)?卡$/, '').replace(/信用卡|聯名卡/g, '');
 }
-const CARD_ALIAS = [[/大戶|大大|dawho/i, /dawho/i, '大大'], [/cube/i, /cube/i], [/熊本熊/, /熊本熊/], [/richart|@gogo|gogo/i, /richart/i]];
+const CARD_ALIAS = [[/大戶|大大|dawho/i, /dawho/i, '大大'], [/cube/i, /cube/i], [/熊本熊/, /熊本熊/], [/richart|@gogo|gogo/i, /richart/i], [/吉伊卡哇|chiikawa|賴點/i, /賴點/]];
+// 名稱一看就知道是哪張卡、但之前對錯的，修正一次（例如吉伊卡哇卡其實是聯邦賴點卡）
+const CARD_FIX = [[/吉伊卡哇|chiikawa/i, /賴點/]];
 function guessCard(name) {
   for (const [re, cre, plan] of CARD_ALIAS) if (re.test(name)) { const c = CARDS.list.find(x => cre.test(x.name)); if (c) return { card: c, plan: plan && HanRewards.plansOf(c).includes(plan) ? plan : null }; }
   const k = cardKey(name); if (k.length < 2) return null;
@@ -1410,6 +1451,10 @@ const autoLinkTried = new Set();
 async function autoLinkCards() {
   if (!CARDS.loaded || !S.db) return;
   for (const a of S.accounts) {
+    if (typeOf(a) === 'card' && !a.cardFixed && !autoLinkTried.has(a.id)) {
+      const fx = CARD_FIX.find(([re]) => re.test(a.name)), want = fx && CARDS.list.find(c => fx[1].test(c.name));
+      if (want && a.cardId !== want.id) { autoLinkTried.add(a.id); const up = { cardId: want.id, cardPlan: null, cardFixed: true, cardLinkOff: false }; try { await S.db.doc('accounts/' + a.id).update(up); Object.assign(a, up); } catch {} continue; }
+    }
     if (typeOf(a) !== 'card' || a.cardLinkOff || (a.cardId && CARDS.byId.has(a.cardId)) || autoLinkTried.has(a.id)) continue;
     autoLinkTried.add(a.id);
     const g = guessCard(a.name); if (!g) continue;
@@ -1611,8 +1656,12 @@ function accEditor(acc, onDone, preset) {
   const rowPick = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '這是哪張卡？（用來算回饋）' }), cp.node);
   const rowStock = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '股數（選填）' }), shares), el('div', {}, el('label', { text: '股價（選填）' }), price));
   const rowCur = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '幣別' }), cur), el('div', {}, el('label', { text: '匯率（1 美元＝？台幣）' }), fx));
+  // 電子錢包（儲值的錢）也是一個帳戶，放在「現金・電子支付」
+  const rowWallet = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '常見的電子錢包（點一下帶入名稱）' }),
+    el('div', { class: 'accs', id: 'walletPresets' }, ...['LINE Pay Money', 'iPASS MONEY', '街口支付', '全支付', '悠遊付', '悠遊卡', '一卡通', 'Pi 拍錢包', '現金'].map(n => el('button', { type: 'button', text: n, onclick: () => { name.value = n; } }))),
+    el('div', { class: 'small muted', style: 'margin-top:4px', text: '儲值在裡面的錢算現金。用它付款時，記帳選這個帳戶；從銀行或信用卡儲值時記一筆「轉帳」。' }));
   const sync = () => {
-    const t = type.value; rowCard.hidden = t !== 'card'; rowPick.hidden = t !== 'card'; rowW.hidden = !['card', 'bank'].includes(t); rowStock.hidden = !['tw_stock', 'us_stock'].includes(t);
+    const t = type.value; rowWallet.hidden = t !== 'cash'; rowCard.hidden = t !== 'card'; rowPick.hidden = t !== 'card'; rowW.hidden = !['card', 'bank'].includes(t); rowStock.hidden = !['tw_stock', 'us_stock'].includes(t);
     rowCur.hidden = TYPES[t].flow; fx.parentElement.hidden = cur.value !== 'USD';
     valLbl.textContent = t === 'card' ? '目前欠款' : t === 'loan' ? '剩餘本金' : (cur.value === 'USD' && !TYPES[t].flow ? '金額（美元）' : '目前金額');
   };
@@ -1639,7 +1688,7 @@ function accEditor(acc, onDone, preset) {
   });
   return el('div', { class: 'edit' },
     el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '名稱' }), name), el('div', {}, el('label', { text: '分類' }), type)),
-    rowCur, rowStock,
+    rowWallet, rowCur, rowStock,
     el('div', { class: 'grid2' }, el('div', {}, valLbl, val), el('div', {}, el('label', { text: '淨資產' }), nw)),
     rowPick, rowCard, rowW,
     el('div', { class: 'grid1', style: 'margin-bottom:10px' }, el('label', { text: '備註' }), note),
@@ -1901,6 +1950,27 @@ function route() {
   requestAnimationFrame(() => $$('.vsw').forEach(v => v._glass && v._glass.sync()));
   render(); window.scrollTo(0, 0);
 }
+
+// 首頁、明細、資產、設定之間左右滑動切換
+(function setupPageSwipe() {
+  const ORDER_V = ['home', 'ledger', 'assets', 'me'];
+  let x0 = 0, y0 = 0, t0 = 0, ok = false;
+  const blocked = (t) => !!t.closest('input,textarea,select,button.swdel,nav,.gseg,.vsw,.seg,.accs,.datechips,.tpl,.sheet,#pModal,.lock,[data-noswipe]') || (() => { for (let n = t; n && n !== document.body; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; })();
+  document.addEventListener('touchstart', (e) => {
+    const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; t0 = Date.now();
+    ok = e.touches.length === 1 && x0 > 24 && x0 < innerWidth - 24 && !$('#sheet').classList.contains('on') && $('#pModal').hidden && !blocked(e.target);
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!ok || window.__rowSwipe) return; ok = false;
+    if (swOpenLi && swOpenLi.isConnected) { swClose(swOpenLi); return; } swOpenLi = null;
+    const p = e.changedTouches[0], dx = p.clientX - x0, dy = p.clientY - y0;
+    if (Date.now() - t0 > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+    const cur = ORDER_V.indexOf(view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view);
+    const next = ORDER_V[cur + (dx < 0 ? 1 : -1)];
+    if (cur < 0 || !next) return;
+    location.hash = '#' + next;
+  }, { passive: true });
+})();
 
 // ---------- data ----------
 function subscribeMonth() {
@@ -2603,7 +2673,7 @@ function openSetup(auto) {
       };
       rate.addEventListener('input', calc); calc();
       return [
-        el('div', { class: 'pnote' }, el('b', { text: '算出你每個月可以花多少。' }), el('div', { class: 'small', text: '先存起來的比例建議 10%～30%。這個數字就是首頁圓圈裡的預算，之後在「我的」頁隨時可以改。' })),
+        el('div', { class: 'pnote' }, el('b', { text: '算出你每個月可以花多少。' }), el('div', { class: 'small', text: '先存起來的比例建議 10%～30%。這個數字就是首頁圓圈裡的預算，之後在「設定」頁隨時可以改。' })),
         el('div', { class: 'edit' }, el('div', { class: 'sb' }, el('b', { style: 'font-size:14px', text: '每月先存幾 %' }), el('span', { class: 'flex', style: 'gap:6px;align-items:center' }, rate, '%'))),
         out];
     },
@@ -3073,7 +3143,7 @@ async function boot(sess) {
   if (S.pendingAdd) { const k = S.pendingAdd; S.pendingAdd = null; setTimeout(() => openMealEntry(k), 300); }
   db.collection('accounts').onSnapshot(snap => {
     S.accounts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！到「我的」頁按「一步一步設定」，或直接到「資產」新增帳戶。'); S.loaded = true;
+    status(S.accounts.length ? '' : '歡迎使用 han in 輸入記帳！到「設定」頁按「一步一步設定」，或直接到「資產」新增帳戶。'); S.loaded = true;
     if (!S.setupChecked) { S.setupChecked = true; setTimeout(() => { if (!S.accounts.length && !S.settings.setupDone && $('#pModal').hidden) openSetup(true); }, 700); }
     if (!lastExpenseAcc) { const c = sorted(S.accounts).find(a => typeOf(a) === 'card'); lastExpenseAcc = c ? c.id : null; }
     subscribeRecent(); render();
