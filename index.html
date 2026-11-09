@@ -544,7 +544,7 @@ body{background:transparent}
   <section id="v-admin" hidden>
     <div class="top"><h1>回饋資料管理</h1><a class="x" href="#me">返回</a></div>
     <div class="card" id="admBulk"><h2>一鍵匯入與更新 <small>用 AI 整理，所有使用者共用</small></h2>
-      <div class="small muted" style="margin-bottom:8px">「匯入熱門卡」會把台灣常用的 50 張信用卡加進資料庫（已經有的會略過）。「更新全部」會逐張重查所有卡片（包含你自己新增的）：還沒核對過的卡直接換成新資料；你核對過的卡有變動時，會放進下方「待確認的變動」，按核准才上線。AI 依既有知識整理、未上網查證，不保證完全正確。</div>
+      <div class="small muted" style="margin-bottom:8px">AI 免費版每分鐘最多查 10 張，所以會一張一張慢慢查（50 張約 6 分鐘），期間請不要關掉 App。「匯入熱門卡」會把台灣常用的 50 張信用卡加進資料庫（已經有的會略過）。「更新全部」會逐張重查所有卡片（包含你自己新增的）：還沒核對過的卡直接換成新資料；你核對過的卡有變動時，會放進下方「待確認的變動」，按核准才上線。AI 依既有知識整理、未上網查證，不保證完全正確。</div>
       <div class="grid2"><button class="btn ghost" id="admSeed" type="button">匯入熱門卡</button><button class="btn" id="admRefresh" type="button">更新全部</button></div>
       <div id="admProg" class="small" style="margin-top:8px" hidden></div></div>
     <div class="card"><h2>卡片與回饋 <small>手動新增或修改，存檔後所有使用者馬上看得到</small></h2>
@@ -1858,16 +1858,22 @@ async function runBulk(kind) {
       el('div', { class: 'muted', text: parts.join('・') }));
   };
   show('');
-  let i = 0;
-  const worker = async () => {
-    while (i < jobs.length && !stop) {
-      const j = jobs[i++]; show(j.label);
-      try { const r = await j.run(); cnt[r.status === 'choose' ? 'exists' : r.status] = (cnt[r.status === 'choose' ? 'exists' : r.status] || 0) + 1; }
-      catch (e) { cnt.fail++; if (e.status === 429 || /額度|次數/.test(e.message || '')) stop = e.message; }
-      done++; show(j.label);
+  // Gemini 免費版每分鐘最多 10 次：一張一張查，每張間隔約 7 秒；碰到每分鐘上限就等一下再試，不會整批停掉
+  const GAP = window.__BULK_GAP ?? 7000, sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  for (const j of jobs) {
+    if (stop) break;
+    const t0 = Date.now(); show(j.label);
+    for (let tries = 0; ; tries++) {
+      try { const r = await j.run(); const k = r.status === 'choose' ? 'exists' : r.status; cnt[k] = (cnt[k] || 0) + 1; break; }
+      catch (e) {
+        const m = e.message || '';
+        if (/忙線|太慢|太久/.test(m) && tries < 2) { show(j.label + '（AI 忙線，等一下自動重試）'); await sleep(window.__BULK_GAP === 0 ? 0 : 30000); continue; }
+        cnt.fail++; if (/今天|明天/.test(m)) stop = m; break;
+      }
     }
-  };
-  await Promise.all([worker(), worker(), worker()]); // 同時查 3 張
+    done++; show(j.label);
+    const wait = GAP - (Date.now() - t0); if (wait > 0 && done < jobs.length) await sleep(wait);
+  }
   show(''); prog.append(el('div', { style: 'margin-top:4px', text: stop ? '已停止：' + stop : '完成。' + (cnt.pending ? '有變動的卡請到下方「待確認的變動」核准。' : '') }));
   btns.forEach(b => b.disabled = false); bulkBusy = false;
   await loadCards(); renderAdmin();
