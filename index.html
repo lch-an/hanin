@@ -501,6 +501,7 @@ body{background:transparent}
       </div>
       <div class="formula" id="bFormula"></div>
       <div class="flex" style="margin-top:10px"><label class="small muted" style="white-space:nowrap">目前預算</label><input class="t num" id="setBudget" inputmode="numeric"><button class="btn ghost" id="useSuggest" type="button" style="white-space:nowrap">用建議值</button><button class="btn" id="setBudgetBtn" type="button" style="white-space:nowrap">儲存</button></div>
+      <div class="small muted" id="budgetMode" style="margin-top:4px"></div>
       <div class="small muted" style="margin-top:10px;line-height:1.7">
         算法：實領薪水 − 先存起來的 − 每月訂閱 − 其他固定支出 ＝ 每月可以花的生活費。<br>
         例如實領 40,000、先存 25%（10,000），再扣掉上面的訂閱，剩下的就是建議生活費。加薪或換工作時，把薪水改掉就會重新計算。<br>
@@ -892,7 +893,7 @@ function renderHome() {
   const tx = monthTx(m);
   const spent = tx.filter(isLiving).reduce((s, x) => s + x.amount, 0);
   const inc = tx.filter(x => x.type === 'income').reduce((s, x) => s + x.amount, 0);
-  const bud = Number(S.settings.budget) || 0, left = bud - spent;
+  const bud = effBudget(), left = bud - spent;
   const remain = daysIn(m) - new Date().getDate() + 1;
   $('#hLeft').textContent = short(left); $('#hLeft').className = 'num ' + (left < 0 ? 'exp' : '');
   $('#hPct').textContent = bud ? `已用 ${Math.round(spent / bud * 100)}%` : '';
@@ -1367,7 +1368,7 @@ function renderStats() {
   const e = exp.reduce((s, t) => s + t.amount, 0), i = inc.reduce((s, t) => s + t.amount, 0);
   $('#sExp').textContent = money(e); $('#sInc').textContent = money(i);
   $('#sNet').textContent = money(i - e); $('#sNet').className = 'v num ' + (i - e < 0 ? 'exp' : 'inc');
-  const liv = tx.filter(isLiving).reduce((s, t) => s + t.amount, 0), bud = Number(S.settings.budget) || 0;
+  const liv = tx.filter(isLiving).reduce((s, t) => s + t.amount, 0), bud = effBudget();
   $('#sBud').textContent = `${money(liv)} / ${money(bud)}`;
   $('#sProg').classList.toggle('over', liv > bud); $('#sProg i').style.width = (bud ? Math.min(100, liv / bud * 100) : 0) + '%';
   const byCat = {}; exp.forEach(t => byCat[t.category] = (byCat[t.category] || 0) + t.amount);
@@ -1639,6 +1640,16 @@ function subEditor(x, i, list) {
     el('div', { class: 'grid2' }, L('分類', cat), el('div', { class: 'sb mrow0', style: 'align-items:center' }, el('span', { class: 'small', text: '每月到扣款日自動記帳' }), el('label', { class: 'switch' }, auto, el('span')))),
     el('div', { class: 'sb' }, el('span', { class: 'small muted', text: '改價格、改方案都在這裡' }), el('div', { class: 'flex' }, el('button', { class: 'btn ghost', type: 'button', text: '取消', onclick: () => { S.subEdit = null; renderSubs(); } }), save)));
 }
+// 預算預設跟著公式走（薪水、先存比例、訂閱、固定支出一改就更新）；自己按「儲存」填了別的數字才固定住
+function budgetFromSettings(st = S.settings) {
+  const salary = (Number(st.salary) || 0) + (st.incomes || []).reduce((a, x) => a + (Number(x.amount) || 0), 0);
+  if (!salary) return null;
+  return Math.max(0, Math.round(salary - Math.round(salary * (Number(st.saveRate ?? 20)) / 100) - subsMonthly() - (Number(st.fixed) || 0)));
+}
+function effBudget() {
+  const st = S.settings, auto = budgetFromSettings(st);
+  return st.budgetAuto !== false && auto != null ? auto : (Number(st.budget) || 0);
+}
 function suggestBudget() {
   const salary0 = numIn('#bSalary'), rate = Math.min(100, Math.max(0, numIn('#bSave'))), fixed = numIn('#bFixed');
   const other = (S.settings.incomes || []).reduce((a, x) => a + (Number(x.amount) || 0), 0), salary = salary0 + other;
@@ -1655,11 +1666,13 @@ function updateFormula() {
     el('div', { class: 'fl tot' }, el('span', { text: '＝ 建議每月生活費' }), el('b', { class: 'num', text: money(g.living) })),
     el('div', { class: 'fl sub' }, el('span', { text: '平均每天' }), el('span', { class: 'num', text: money(g.living / 30) })));
 }
+function updateBudgetMode() { const st = S.settings; $('#budgetMode').textContent = st.budgetAuto !== false && budgetFromSettings(st) != null ? '跟著上面的公式自動更新' : '自訂金額，不會跟著公式變（按「用建議值」改回自動）'; }
 function renderBudgetCard() {
   const st = S.settings, act = document.activeElement;
   if (!act || !act.closest('#budgetCard')) {
-    $('#bSalary').value = st.salary ?? 0; $('#bSave').value = st.saveRate ?? 20; $('#bFixed').value = st.fixed ?? 0; $('#setBudget').value = st.budget ?? 20000;
+    $('#bSalary').value = st.salary ?? 0; $('#bSave').value = st.saveRate ?? 20; $('#bFixed').value = st.fixed ?? 0; $('#setBudget').value = effBudget();
   }
+  updateBudgetMode();
   renderSubs();
   const inc = st.incomes || [];
   $('#bIncNote').textContent = inc.length ? `另有固定收入：${inc.map(x => `${x.name} ${fmt.format(x.amount)}`).join('、')}（會一起算進去）` : (st.payday ? `每月 ${st.payday} 號入帳` : '');
@@ -1676,6 +1689,7 @@ function render() {
   if (view === 'ledger' && document.activeElement !== $('#q')) renderLedger();
   if (view === 'stats') renderStats();
   if (view === 'me' && !document.activeElement?.closest('#budgetCard, #meCard')) renderBudgetCard();
+  if (view === 'me') updateBudgetMode();
   if (view === 'assets' && !document.activeElement?.closest('#groups, #addAccForm')) renderAssets();
   if ($('#sheet').classList.contains('on')) renderSheet();
 }
@@ -2407,7 +2421,7 @@ function openSetup(auto) {
     const incomes = W.incomes.filter(x => clean(x.name) && n(x.amount) > 0).map(x => ({ name: clean(x.name), amount: n(x.amount) }));
     const subs = W.subs.filter(x => clean(x.name) && n(x.amount) > 0).map(x => ({ ...x, name: clean(x.name), amount: n(x.amount), currency: x.currency || 'TWD', day: n(x.day) >= 1 && n(x.day) <= 31 ? Math.round(n(x.day)) : null }));
     const next = { ...S.settings, salary: n(W.salary), payday: n(W.payday) >= 1 && n(W.payday) <= 31 ? Math.round(n(W.payday)) : null, incomes, fixedItems, fixed: fixedItems.reduce((a, x) => a + x.amount, 0), subs, saveRate: W.saveRate, setupDone: true };
-    if (W.budget > 0) next.budget = W.budget;
+    if (W.budget > 0) { next.budget = W.budget; next.budgetAuto = true; }
     try {
       await S.db.doc('settings/main').set(next);
       let order = Date.now();
@@ -2792,7 +2806,17 @@ async function start() {
     const csv = ['日期,類型,分類,金額,帳戶,轉入,備註', ...rows.map(t => [t.date, { expense: '支出', income: '收入', transfer: '轉帳' }[t.type], t.category, t.amount, accName(t.account), t.to ? accName(t.to) : '', t.note].map(q).join(','))].join('\n');
     try { await navigator.clipboard.writeText(csv); toast('已複製，可貼到 Excel'); } catch { toast('瀏覽器不允許複製'); }
   });
-  ['#bSalary', '#bSave', '#bFixed'].forEach(id => $(id).addEventListener('input', updateFormula));
+  // 改薪水、先存比例、固定支出：公式和預算馬上更新，停手 0.8 秒自動存檔
+  let budgetTimer = null;
+  ['#bSalary', '#bSave', '#bFixed'].forEach(id => $(id).addEventListener('input', () => {
+    updateFormula();
+    const sg = suggestBudget();
+    if (S.settings.budgetAuto !== false) $('#setBudget').value = sg.living;
+    clearTimeout(budgetTimer);
+    budgetTimer = setTimeout(async () => {
+      try { await S.db.doc('settings/main').set({ ...S.settings, salary: sg.salary0, saveRate: sg.rate, fixed: sg.fixed, ...(S.settings.budgetAuto !== false ? { budget: sg.living } : {}) }); toast('已更新，每天可以花 ' + money(effBudget() / 30) + ' 左右'); } catch { toast('儲存失敗'); }
+    }, 800);
+  }));
   refreshFx();
   $('#subAddBtn').addEventListener('click', () => {
     const name = $('#subName').value.trim(), amount = numIn('#subAmt'), day = Math.round(numIn('#subDay'));
@@ -2803,11 +2827,15 @@ async function start() {
     setTimeout(autoPostFixed, 500);
     $('#subName').value = ''; $('#subAmt').value = ''; $('#subDay').value = '';
   });
-  $('#useSuggest').addEventListener('click', () => { $('#setBudget').value = suggestBudget().living; });
+  $('#useSuggest').addEventListener('click', async () => {
+    const sg = suggestBudget(); $('#setBudget').value = sg.living;
+    try { await S.db.doc('settings/main').set({ ...S.settings, salary: sg.salary0, saveRate: sg.rate, fixed: sg.fixed, budget: sg.living, budgetAuto: true }); toast('預算改回自動計算'); } catch { toast('儲存失敗'); }
+  });
   $('#setBudgetBtn').addEventListener('click', async () => {
     const v = numIn('#setBudget'); if (!(v > 0)) { toast('請輸入預算金額'); return; }
     const sg = suggestBudget();
-    try { await S.db.doc('settings/main').set({ ...S.settings, budget: v, salary: sg.salary, saveRate: sg.rate, fixed: sg.fixed }); toast('預算已更新'); } catch { toast('儲存失敗'); }
+    const auto = Math.round(v) === Math.round(sg.living);
+    try { await S.db.doc('settings/main').set({ ...S.settings, budget: v, budgetAuto: auto, salary: sg.salary0, saveRate: sg.rate, fixed: sg.fixed }); toast(auto ? '預算已更新' : '已存成自訂預算，之後不會跟著公式變'); } catch { toast('儲存失敗'); }
   });
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#importFile').addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; try { askImport(JSON.parse(await f.text())); } catch { toast('檔案讀不到'); } e.target.value = ''; });
