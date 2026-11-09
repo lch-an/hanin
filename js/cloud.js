@@ -229,6 +229,17 @@ window.HanCloud = (() => {
     },
     async saveCard(card, rules) { const { data, error } = await sb.rpc('admin_save_card', { card, rules }); if (error) throw new Error(error.message); return data; },
     async deleteCard(id) { const { error } = await sb.rpc('admin_delete_card', { card_id: id }); if (error) throw new Error(error.message); },
+    // 一鍵更新：逐張重查。未核對的卡直接更新；核對過的卡有變動就放進待確認
+    async refreshCard(cardId) {
+      const { data, error } = await sb.functions.invoke('card-lookup', { body: { mode: 'refresh', card_id: cardId } });
+      if (error) {
+        let msg = '更新失敗';
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch {}
+        if (error.context && [504, 546].includes(error.context.status)) msg = 'AI 回應太久';
+        const e = new Error(msg); e.status = error.context && error.context.status; throw e;
+      }
+      return data.result;
+    },
     // 用 Google Gemini 上網查卡片權益（只送卡名與銀行名），回傳草稿給管理員核對
     async lookupCard(name, bank) {
       const { data, error } = await sb.functions.invoke('card-lookup', { body: { mode: 'draft', name, bank } });

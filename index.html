@@ -543,6 +543,10 @@ body{background:transparent}
   <!-- 管理員：回饋資料 -->
   <section id="v-admin" hidden>
     <div class="top"><h1>回饋資料管理</h1><a class="x" href="#me">返回</a></div>
+    <div class="card" id="admBulk"><h2>一鍵匯入與更新 <small>用 AI 整理，所有使用者共用</small></h2>
+      <div class="small muted" style="margin-bottom:8px">「匯入熱門卡」會把台灣常用的 50 張信用卡加進資料庫（已經有的會略過）。「更新全部」會逐張重查所有卡片（包含你自己新增的）：還沒核對過的卡直接換成新資料；你核對過的卡有變動時，會放進下方「待確認的變動」，按核准才上線。AI 依既有知識整理、未上網查證，不保證完全正確。</div>
+      <div class="grid2"><button class="btn ghost" id="admSeed" type="button">匯入熱門卡</button><button class="btn" id="admRefresh" type="button">更新全部</button></div>
+      <div id="admProg" class="small" style="margin-top:8px" hidden></div></div>
     <div class="card"><h2>卡片與回饋 <small>手動新增或修改，存檔後所有使用者馬上看得到</small></h2>
       <div class="grid2" style="margin-bottom:8px"><select class="t" id="cmBank"></select><button class="btn" id="cmAdd" type="button">新增卡片</button></div>
       <div id="cmList"></div></div>
@@ -1821,17 +1825,64 @@ function showPolicy(r, close) {
 }
 
 // ===== 管理員：審核回饋變動 =====
+// ===== 一鍵匯入熱門卡、一鍵更新全部 =====
+// 台灣常用的信用卡（銀行代碼、卡名）；AI 查不到的卡不會加入
+const POPULAR_CARDS = [
+  ['cathay', 'CUBE卡'], ['cathay', '亞洲萬里通聯名卡'], ['cathay', '蝦皮購物聯名卡'], ['cathay', '長榮航空聯名卡'],
+  ['taishin', 'Richart卡'], ['taishin', '@GoGo卡'], ['taishin', '玫瑰Giving卡'], ['taishin', '太陽卡'], ['taishin', 'FlyGo卡'], ['taishin', '街口聯名卡'], ['taishin', '黑狗卡'], ['taishin', '新光三越聯名卡'],
+  ['esun', 'Unicard'], ['esun', 'U Bear卡'], ['esun', 'Pi拍錢包信用卡'], ['esun', '熊本熊卡'],
+  ['ctbc', 'uniopen聯名卡'], ['ctbc', 'LINE Pay卡'], ['ctbc', '中華航空聯名卡'], ['ctbc', 'ALL ME卡'], ['ctbc', '和泰Pay聯名卡'], ['ctbc', '中油聯名卡'],
+  ['sinopac', 'DAWAY卡'], ['sinopac', '大戶卡'], ['sinopac', 'SPORT卡'], ['sinopac', '幣倍卡'], ['sinopac', '現金回饋JCB卡'], ['sinopac', '保倍卡'],
+  ['hsbc', '現金回饋御璽卡'], ['hsbc', '匯鑽卡'], ['hsbc', '旅人無限卡'], ['hsbc', 'Live+現金回饋卡'],
+  ['ubot', '吉鶴卡'], ['ubot', '賴點卡'], ['ubot', '綠卡'],
+  ['fubon', 'J卡'], ['fubon', 'Costco聯名卡'], ['fubon', 'momo卡'], ['fubon', '鑽保卡'],
+  ['dbs', 'eco永續卡'], ['dbs', '飛行世界商務卡'],
+  ['firstbank', 'iLEO卡'], ['firstbank', 'LIVINGGREEN綠活卡'],
+  ['mega', 'Mega One卡'], ['hncb', 'i網購生活卡'], ['hncb', 'SnY卡'],
+  ['feib', '樂家+卡'], ['feib', '快樂信用卡'], ['skbank', 'OU卡'], ['tcb', '利High卡'],
+];
+let bulkBusy = false;
+async function runBulk(kind) {
+  if (bulkBusy) return; bulkBusy = true;
+  const prog = $('#admProg'), btns = [$('#admSeed'), $('#admRefresh')];
+  btns.forEach(b => b.disabled = true); prog.hidden = false;
+  const cnt = { added: 0, exists: 0, notfound: 0, updated: 0, same: 0, pending: 0, fail: 0 };
+  const jobs = kind === 'seed' ? POPULAR_CARDS.map(([bank, name]) => ({ label: name, run: () => HanCloud.lookupCard(name, bank) }))
+    : (await loadCards().then(() => CARDS.list)).map(c => ({ label: c.name, run: () => HanCloud.admin.refreshCard(c.id) }));
+  let done = 0, stop = '';
+  const show = (cur) => {
+    const parts = kind === 'seed' ? [`新增 ${cnt.added}`, `已經有 ${cnt.exists}`, `查不到 ${cnt.notfound}`] : [`已更新 ${cnt.updated}`, `沒變 ${cnt.same}`, `待確認 ${cnt.pending}`, `查不到 ${cnt.notfound}`];
+    if (cnt.fail) parts.push(`失敗 ${cnt.fail}`);
+    put(prog, el('div', { class: 'sb' }, el('b', { text: `${kind === 'seed' ? '匯入' : '更新'}中 ${done}/${jobs.length}` }), el('span', { class: 'muted', text: cur || '' })),
+      el('div', { style: 'height:6px;border-radius:3px;background:var(--soft);margin:6px 0;overflow:hidden' }, el('div', { style: `height:100%;width:${jobs.length ? done / jobs.length * 100 : 100}%;background:var(--accent);transition:width .3s` })),
+      el('div', { class: 'muted', text: parts.join('・') }));
+  };
+  show('');
+  let i = 0;
+  const worker = async () => {
+    while (i < jobs.length && !stop) {
+      const j = jobs[i++]; show(j.label);
+      try { const r = await j.run(); cnt[r.status === 'choose' ? 'exists' : r.status] = (cnt[r.status === 'choose' ? 'exists' : r.status] || 0) + 1; }
+      catch (e) { cnt.fail++; if (e.status === 429 || /額度|次數/.test(e.message || '')) stop = e.message; }
+      done++; show(j.label);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]); // 同時查 3 張
+  show(''); prog.append(el('div', { style: 'margin-top:4px', text: stop ? '已停止：' + stop : '完成。' + (cnt.pending ? '有變動的卡請到下方「待確認的變動」核准。' : '') }));
+  btns.forEach(b => b.disabled = false); bulkBusy = false;
+  await loadCards(); renderAdmin();
+}
+
 async function renderAdmin() {
   if (!S.isAdmin) return;
   const list = $('#admList'), banks = $('#admBanks');
   renderCardManager();
-  $('#admPendingCard').hidden = $('#admBanksCard').hidden = !HanCloud.aiEnabled;
-  if (!HanCloud.aiEnabled) return;
+  $('#admBanksCard').hidden = !HanCloud.aiEnabled;
   list.replaceChildren(el('div', { class: 'empty' }, el('span', { class: 'spin' }), '讀取中'));
   try {
-    const [rows, bs] = await Promise.all([HanCloud.admin.pending(), HanCloud.admin.banks()]);
+    const [rows, bs] = await Promise.all([HanCloud.admin.pending(), HanCloud.aiEnabled ? HanCloud.admin.banks() : Promise.resolve([])]);
     $('#admCount').textContent = rows.length ? `${rows.length} 筆` : '';
-    const ruleKey = (r) => `${r.channel}｜${pctTxt(r.rate)}${r.cap_amount ? '｜上限 ' + fmt.format(r.cap_amount) + '/' + ({ month: '月', quarter: '季', year: '年', campaign: '活動' }[r.cap_period] || '') : ''}${r.valid_to ? '｜到 ' + r.valid_to : ''}`;
+    const ruleKey = (r) => `${r.plan ? '〔' + r.plan + '〕' : ''}${r.channel}｜${pctTxt(r.rate)}${r.cap_amount ? '｜上限 ' + fmt.format(r.cap_amount) + '/' + ({ month: '月', quarter: '季', year: '年', campaign: '活動' }[r.cap_period] || '') : ''}${r.valid_to ? '｜到 ' + r.valid_to : ''}`;
     list.replaceChildren(...(rows.length ? rows.map(ch => {
       const p = ch.proposed || {}, c = ch.current || {};
       const now = new Set((c.rewards || []).map(ruleKey)), nxt = new Set((p.rewards || []).map(ruleKey));
@@ -2587,6 +2638,8 @@ function showAuth(on) { $('#authScreen').hidden = !on; $('#appWrap').hidden = $(
 async function start() {
   route(); window.addEventListener('hashchange', route);
   $('#fab').addEventListener('click', () => openSheet(null, view === 'ledger' && S.selDay ? S.selDay : (view === 'home' && S.homeView === 'cal' && S.homeDay ? S.homeDay : null)));
+  $('#admSeed').addEventListener('click', () => runBulk('seed'));
+  $('#admRefresh').addEventListener('click', () => { if (confirm('逐張重查所有卡片，大約要幾分鐘，期間請不要關掉 App。開始嗎？')) runBulk('refresh'); });
   $$('#homeSeg button').forEach(x => x.addEventListener('click', () => { S.homeView = x.dataset.h; try { localStorage.setItem('homeView', S.homeView); } catch {} renderHome(); }));
   try { S.homeTab = localStorage.getItem('homeTab') || 'main'; } catch {}
   const pickHome = (h) => { S.homeTab = h; try { localStorage.setItem('homeTab', h); } catch {} renderHome(); };
