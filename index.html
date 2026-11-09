@@ -663,7 +663,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v32';
+const APP_VER = 'v33';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -1079,7 +1079,8 @@ function renderSplit() {
     settle.length && (sp.friends || []).length > 1 ? el('div', { class: 'card' },
       el('div', { class: 'sb' }, el('h2', { style: 'margin:0', text: '最少轉帳結清' }), el('button', { class: 'x', type: 'button', text: '複製給 LINE', onclick: copyTxt })),
       el('div', { class: 'small muted', style: 'margin:4px 0 6px', text: '把所有人互相欠的錢抵銷後，照這樣轉就全部結清。' }),
-      ...settle.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num', text: money(x.amount) })))) : null,
+      ...settle.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num', text: money(x.amount) }))),
+      el('button', { class: 'btn', type: 'button', id: 'splAllDone', style: 'width:100%;margin-top:10px', text: '大家照這樣轉完了，全部結清', onclick: openSettleAll })) : null,
     el('div', { class: 'card' }, el('h2', { text: '最近紀錄' }),
       (sp.bills || []).length ? el('ul', { class: 'list', id: 'splList' }, ...(sp.bills || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.ts || 0) - (a.ts || 0)).slice(0, 50).map(b => {
         const mine = Number((b.shares || {}).me || 0);
@@ -1125,6 +1126,57 @@ function openSettleFriend(fid) {
         try { for (const x of items) if (sel.has(x.b.id)) { const b = bills.find(y => y.id === x.b.id); if (b) await splMarkPaid(b, x.who, acc, sync); } }
         catch { toast('同步記帳失敗，結清狀態仍會儲存'); }
         if (await saveSplit({ ...sp, bills }, `已和 ${splName(fid)} 結清 ${sel.size} 件事`)) close(); else e.target.disabled = false;
+      } }));
+  };
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.hidden = false; draw();
+}
+
+// 照「最少轉帳」全部結清：所有事件都標記已結清；記帳只記真正進出我帳戶的錢
+function openSettleAll() {
+  const m = $('#pModal'), box = $('#pBox');
+  const close = () => { m.hidden = true; box.replaceChildren(); };
+  const sp0 = splData(), plan = splSettle(sp0);
+  const mine = plan.filter(x => x.from === 'me' || x.to === 'me');
+  const net = mine.reduce((a, x) => a + (x.to === 'me' ? x.amount : -x.amount), 0);
+  let acc = (payables()[0] || {}).id || '', sync = S.accounts.length > 0;
+  const draw = () => {
+    const accSel = el('select', { class: 't' }, ...payables().map(a => el('option', { value: a.id, text: a.name }))); accSel.value = acc; accSel.addEventListener('change', () => acc = accSel.value);
+    const sw = el('input', { type: 'checkbox' }); sw.checked = sync; sw.addEventListener('change', () => { sync = sw.checked; draw(); });
+    put(box,
+      el('div', { class: 'sb' }, el('b', { text: '全部結清' }), el('button', { class: 'x', type: 'button', text: '關閉', onclick: close })),
+      el('div', { class: 'small muted', style: 'margin:6px 0', text: '確認大家都照下面轉完錢了，所有還沒結清的事件會一起標記成已結清。' }),
+      ...plan.map(x => el('div', { class: 'spl-f' }, el('div', { class: 'n', text: `${splName(x.from)} → ${splName(x.to)}` }), el('div', { class: 'amt num ' + (x.to === 'me' ? 'inc' : x.from === 'me' ? 'exp' : ''), text: money(x.amount) }))),
+      el('div', { class: 'sb', style: 'margin-top:10px' }, el('b', { text: net > 0 ? '我實際收到' : net < 0 ? '我實際付出' : '我不用收也不用付' }), el('b', { class: 'num ' + (net > 0 ? 'inc' : net < 0 ? 'exp' : ''), id: 'stlAllNet', text: money(Math.abs(net)) })),
+      el('div', { class: 'edit', style: 'margin-top:10px' },
+        el('div', { class: 'sb mrow0', style: 'align-items:center' }, el('span', { class: 'small', text: '同時記到我的記帳' }), el('label', { class: 'switch' }, sw, el('span'))),
+        sync ? el('div', { class: 'small muted', style: 'margin-top:4px', text: '「朋友欠我」和「我欠朋友」會一起歸零；帳戶只會多一筆實際收到（或付出）的錢，不算收入或支出。' }) : null,
+        sync && net ? el('label', { class: 'small muted', style: 'display:flex;flex-direction:column;gap:3px;margin-top:8px' }, net > 0 ? '錢進到哪個帳戶' : '從哪個帳戶付', accSel) : null),
+      el('button', { class: 'btn', type: 'button', id: 'stlAllGo', style: 'width:100%;margin-top:14px', text: '確認全部結清', onclick: async (e) => {
+        e.target.disabled = true;
+        const sp = splData(), id = splId(), today = todayStr(); let recv = 0, owe = 0, n = 0;
+        const bills = sp.bills.map(b => {
+          if (['recv', 'pay'].includes(b.kind)) return b;
+          const nb = { ...b, paid: { ...(b.paid || {}) } };
+          for (const [p, v] of Object.entries(b.shares || {})) {
+            if (p === b.payer || nb.paid[p]) continue;
+            if (b.payer === 'me') recv += Number(v) || 0; else if (p === 'me') owe += Number(v) || 0;
+            nb.paid[p] = { at: today, txn: null, all: id }; n++;
+          }
+          return nb;
+        });
+        const txns = [];
+        if (sync && S.accounts.length) {
+          try {
+            const put1 = async (suffix, d) => { const tid = 's_all_' + id + '_' + suffix; await S.db.doc('txns/' + tid).set({ type: 'transfer', category: '轉帳', date: today, note: '分帳全部結清', createdAt: Date.now(), ...d }); txns.push(tid); };
+            const off = Math.min(recv, owe), rest = Math.round(recv - owe);
+            if (off > 0) await put1('o', { amount: Math.round(off), account: await splAccount('receivable'), to: await splAccount('loan') });
+            if (rest > 0 && acc) await put1('r', { amount: rest, account: await splAccount('receivable'), to: acc });
+            if (rest < 0 && acc) await put1('p', { amount: -rest, account: acc, to: await splAccount('loan') });
+          } catch { toast('同步記帳失敗，結清狀態仍會儲存'); }
+        }
+        const settles = [...(sp.settles || []), { id, at: today, plan, txns }];
+        if (await saveSplit({ ...sp, bills, settles }, `已全部結清（${n} 筆）`)) close(); else e.target.disabled = false;
       } }));
   };
   m.onclick = (e) => { if (e.target === m) close(); };
