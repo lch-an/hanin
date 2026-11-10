@@ -488,6 +488,8 @@ body{background:transparent}
     <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
       <div class="bcalc">
         <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 29500（2026 年基本工資）"><span class="small" id="bIncNote"></span></label>
+        <div class="grid2"><label>發薪日<input class="t num" id="bPayday" inputmode="numeric" placeholder="例如 10"></label><label>薪水入帳帳戶<select class="t" id="bSalAcc"><option value="">不自動記</option></select></label></div>
+        <div class="small muted" id="bSalNote" style="margin:-4px 0 8px">填發薪日和入帳帳戶，每月那天會自動記一筆薪水收入。</div>
         <label>先存起來的比例（%）<input class="t num" id="bSave" inputmode="numeric"></label>
         <label>其他固定支出（訂閱以外）<input class="t num" id="bFixed" inputmode="numeric" placeholder="例如手機費、自己繳的保費"></label>
       </div>
@@ -668,7 +670,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v35';
+const APP_VER = 'v36';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -719,6 +721,25 @@ function nextDueDate(dueDay) {
   const d = new Date(); let y = d.getFullYear(), m = d.getMonth() + 1;
   if (d.getDate() > dueDay) { m++; if (m > 12) { m = 1; y++; } }
   return `${y}-${pad(m)}-${pad(Math.min(dueDay, new Date(y, m, 0).getDate()))}`;
+}
+// 某個扣款日對應的結帳日：扣款日之前最近的一個結帳日
+function closeDateFor(dueDate, closeDay) {
+  let y = Number(dueDate.slice(0, 4)), m = Number(dueDate.slice(5, 7));
+  const dd = Number(dueDate.slice(8));
+  if (closeDay >= dd) { m--; if (m < 1) { m = 12; y--; } }
+  return `${y}-${pad(m)}-${pad(Math.min(closeDay, new Date(y, m, 0).getDate()))}`;
+}
+// 這期要繳多少：結帳日（含）以前的消費＋所有已繳的款項；結帳日之後刷的算下一期
+function stmtOwed(acc, dueDate, skipId) {
+  if (!acc.closeDay) return Math.max(0, valueOf(acc));
+  const close = closeDateFor(dueDate, acc.closeDay);
+  let b = Number(acc.base) || 0;
+  for (const t of allTx()) {
+    if ((t.createdAt || 0) <= (acc.baseAt || 0) || t.id === skipId) continue;
+    const pay = t.type === 'transfer' && t.to === acc.id;
+    if (pay ? (t.date || '') <= dueDate : (t.date || '') <= close) b += flowEffect(acc, t);
+  }
+  return Math.max(0, Math.round(b));
 }
 const daysUntil = (s) => Math.round((new Date(s + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000);
 
@@ -939,8 +960,9 @@ function renderHome() {
   const C = 2 * Math.PI * 50, frac = bud ? Math.max(0, Math.min(1, left / bud)) : 0;
   const arc = $('#ringArc'); arc.setAttribute('stroke-dasharray', `${C * frac} ${C}`); arc.setAttribute('stroke', left < bud * 0.15 ? 'var(--exp)' : 'var(--accent)');
   const cards = S.accounts.filter(a => typeOf(a) === 'card' && a.dueDay);
-  const dues = cards.map(a => ({ a, due: nextDueDate(a.dueDay), v: valueOf(a) })).sort((x, y) => x.due.localeCompare(y.due));
-  $('#dues').replaceChildren(...(dues.length ? dues.map(({ a, due, v }) => { const n = daysUntil(due); return el('div', { class: 'due' + (n <= 7 && v > 0 ? ' soon' : '') }, el('div', { class: 'n', text: a.name }), el('div', { class: 'v num', text: money(v) }), el('div', { class: 'd ' + (n <= 7 ? 'exp' : 'muted'), text: `${Number(due.slice(5, 7))}/${Number(due.slice(8))} 扣款・${n === 0 ? '今天' : n + ' 天後'}` })); }) : [el('div', { class: 'empty', text: '在資產頁替信用卡設定扣款日' })]));
+  const dues = cards.map(a => { const due = nextDueDate(a.dueDay), v = stmtOwed(a, due), all = Math.max(0, Math.round(valueOf(a))); return { a, due, v, next: Math.max(0, all - v) }; }).sort((x, y) => x.due.localeCompare(y.due));
+  $('#dues').replaceChildren(...(dues.length ? dues.map(({ a, due, v, next }) => { const n = daysUntil(due); return el('div', { class: 'due' + (n <= 7 && v > 0 ? ' soon' : '') }, el('div', { class: 'n', text: a.name }), el('div', { class: 'v num', text: money(v) }),
+    el('div', { class: 'd ' + (n <= 7 ? 'exp' : 'muted'), text: `${Number(due.slice(5, 7))}/${Number(due.slice(8))} 扣款・${n === 0 ? '今天' : n + ' 天後'}${a.closeDay ? `・${a.closeDay} 日結帳後刷的 ${money(next)} 算下一期` : '・設定結帳日才能分期計算'}${a.payFrom ? '・自動扣繳' : ''}` })); }) : [el('div', { class: 'empty', text: '在資產頁替信用卡設定扣款日' })]));
   const hv = S.homeView;
   $$('#homeSeg button').forEach(x => x.classList.toggle('on', x.dataset.h === hv));
   renderMonthRewards();
@@ -1651,7 +1673,11 @@ function accEditor(acc, onDone, preset) {
   const wbox = el('div', { class: 'accs' }, ...VIAS.filter(v => v[0]).map(([v, l]) => { const b = el('button', { type: 'button', class: wset.has(v) ? 'on' : '', text: l }); b.addEventListener('click', () => { wset.has(v) ? wset.delete(v) : wset.add(v); b.classList.toggle('on'); b.textContent = l; }); return b; }));
   const rowW = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '綁定在哪些行動支付（可多選）' }), wbox);
   const valLbl = el('label', { text: '目前金額' });
-  const rowCard = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '結帳日' }), close), el('div', {}, el('label', { text: '自動扣繳日' }), due));
+  const payFrom = el('select', { class: 't', id: 'accPayFrom' }, el('option', { value: '', text: '不自動記（自己記繳卡費）' }), ...sorted(S.accounts.filter(a => typeOf(a) === 'bank')).map(a => el('option', { value: a.id, text: a.name })));
+  payFrom.value = acc.payFrom || '';
+  const rowCard = el('div', {}, el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '結帳日' }), close), el('div', {}, el('label', { text: '自動扣繳日' }), due)),
+    el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '自動扣繳帳戶（到扣款日自動記一筆繳卡費）' }), payFrom,
+      el('div', { class: 'small muted', style: 'margin-top:4px', text: '金額只算結帳日以前刷的；結帳日之後刷的會留到下一期。' })));
   const cp = cardPicker(acc.cardId, acc.cardPlan);
   const rowPick = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '這是哪張卡？（用來算回饋）' }), cp.node);
   const rowStock = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '股數（選填）' }), shares), el('div', {}, el('label', { text: '股價（選填）' }), price));
@@ -1670,7 +1696,8 @@ function accEditor(acc, onDone, preset) {
   saveB.addEventListener('click', async () => {
     const n = name.value.trim(); if (!n) { toast('請輸入名稱'); return; }
     const t = type.value, num = (x) => { const v = Number(String(x.value).replace(/,/g, '')); return Number.isFinite(v) ? v : 0; };
-    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null, cardPlan: t === 'card' ? (cp.plan() || null) : null, cardLinkOff: t === 'card' && !cp.value() };
+    const data = { wallets: ['card', 'bank'].includes(t) ? [...wset] : [], name: n.slice(0, 40), type: t, inNW: nw.value === '1', note: note.value.trim().slice(0, 60), closeDay: t === 'card' ? (num(close) || null) : null, dueDay: t === 'card' ? (num(due) || null) : null, cardId: t === 'card' ? (cp.value() || null) : null, cardPlan: t === 'card' ? (cp.plan() || null) : null, cardLinkOff: t === 'card' && !cp.value(), payFrom: t === 'card' ? (payFrom.value || null) : null };
+    if (data.payFrom && data.payFrom !== acc.payFrom) data.payFromSince = monthOf(todayStr()); // 從這個月的扣款開始自動記
     if (TYPES[t].flow) { data.currency = 'TWD'; data.fx = null; data.shares = null; data.price = null; const v = num(val); if (isNew || Math.round(valueOf(acc)) !== Math.round(v) || typeOf(acc) !== t) { data.base = v; data.baseAt = Date.now(); } }
     else { data.currency = cur.value; data.fx = cur.value === 'USD' ? (num(fx) || 32.6) : null; data.base = num(val); data.baseAt = Date.now();
       const hasS = ['tw_stock', 'us_stock'].includes(t) && shares.value !== '' && price.value !== '';
@@ -1826,6 +1853,34 @@ async function autoPostFixed() {
         x.done = m; changed = true;
       }
     }
+    // 信用卡自動扣繳：扣款日到了，從指定銀行帳戶記一筆繳卡費（只繳結帳日以前的）
+    for (const a of S.accounts) {
+      if (typeOf(a) !== 'card' || !a.payFrom || !a.dueDay || !accById(a.payFrom)) continue;
+      const since = a.payFromSince || m0;
+      for (const m of [shiftMonth(m0, -1), m0]) {
+        if (m < since) continue;
+        const date = `${m}-${pad(Math.min(Number(a.dueDay), daysIn(m)))}`; if (date > t) continue;
+        if (a.payDone && a.payDone >= m) continue;
+        const ref = S.db.doc(`txns/cp_${a.id}_${m.replace('-', '')}`);
+        if (!(await ref.get()).exists) {
+          const amt = stmtOwed(a, date);
+          if (amt > 0) { await ref.set({ type: 'transfer', amount: amt, date, account: a.payFrom, to: a.id, category: '繳卡費', note: '自動扣繳', auto: true, createdAt: Date.now() }); posted.push(a.name + ' 繳卡費'); }
+        }
+        await S.db.doc('accounts/' + a.id).update({ payDone: m }); a.payDone = m;
+      }
+    }
+    // 薪水：發薪日自動記一筆收入
+    const st = S.settings, salAcc = st.salaryAcc && accById(st.salaryAcc);
+    if (salAcc && st.payday && Number(st.salary) > 0) {
+      const since = st.salarySince || m0;
+      for (const m of [shiftMonth(m0, -1), m0]) {
+        if (m < since) continue;
+        const date = `${m}-${pad(Math.min(Number(st.payday), daysIn(m)))}`; if (date > t) continue;
+        const manual = allTx().some(tx => tx.type === 'income' && tx.category === '薪水' && monthOf(tx.date) === m && !String(tx.id || '').startsWith('sal_'));
+        const ref = S.db.doc(`txns/sal_${m.replace('-', '')}`);
+        if (!manual && !(await ref.get()).exists) { await ref.set({ type: 'income', amount: Number(st.salary), date, account: salAcc.id, category: '薪水', note: '', auto: true, createdAt: Date.now() }); posted.push('薪水'); }
+      }
+    }
     if (changed) await S.db.doc('settings/main').set({ ...S.settings, subs });
     if (posted.length) toast('已自動記帳：' + posted.slice(0, 3).join('、') + (posted.length > 3 ? ` 等 ${posted.length} 筆` : ''));
   } catch (e) { console.warn('自動記帳失敗', e); }
@@ -1916,6 +1971,9 @@ function renderBudgetCard() {
     $('#bSalary').value = st.salary ?? 0; $('#bSave').value = st.saveRate ?? 20; $('#bFixed').value = st.fixed ?? 0; $('#setBudget').value = effBudget();
   }
   updateBudgetMode();
+  const sa = $('#bSalAcc');
+  if (document.activeElement !== sa) { sa.replaceChildren(el('option', { value: '', text: '不自動記' }), ...sorted(S.accounts.filter(a => ['bank', 'cash'].includes(typeOf(a)))).map(a => el('option', { value: a.id, text: a.name }))); sa.value = st.salaryAcc || ''; }
+  if (document.activeElement !== $('#bPayday')) $('#bPayday').value = st.payday || '';
   renderSubs();
   const inc = st.incomes || [];
   $('#bIncNote').textContent = inc.length ? `另有固定收入：${inc.map(x => `${x.name} ${fmt.format(x.amount)}`).join('、')}（會一起算進去）` : (st.payday ? `每月 ${st.payday} 號入帳` : '');
@@ -3072,6 +3130,14 @@ async function start() {
   });
   // 改薪水、先存比例、固定支出：公式和預算馬上更新，停手 0.8 秒自動存檔
   let budgetTimer = null;
+  const saveSalarySetup = async () => {
+    const d = Math.round(numIn('#bPayday')), acc = $('#bSalAcc').value || null;
+    const next = { ...S.settings, payday: d >= 1 && d <= 31 ? d : null, salaryAcc: acc };
+    if (acc && acc !== S.settings.salaryAcc) next.salarySince = monthOf(todayStr());
+    try { await S.db.doc('settings/main').set(next); toast(next.payday && acc ? `每月 ${next.payday} 號會自動記薪水` : '已儲存'); setTimeout(autoPostFixed, 600); } catch { toast('儲存失敗'); }
+  };
+  $('#bSalAcc').addEventListener('change', saveSalarySetup);
+  $('#bPayday').addEventListener('change', saveSalarySetup);
   ['#bSalary', '#bSave', '#bFixed'].forEach(id => $(id).addEventListener('input', () => {
     updateFormula();
     const sg = suggestBudget();
