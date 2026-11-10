@@ -682,7 +682,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v39';
+const APP_VER = 'v40';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -1105,9 +1105,9 @@ async function splSyncTxns(b, accId) {
   if (b.kind === 'bill') {
     if (b.payer === 'me') {
       if (my > 0) add('e', { type: 'expense', amount: my, account: accId, category: b.cat || '餐飲' });
-      if (T - my > 0) add('r', { type: 'transfer', amount: T - my, account: accId, to: await splAccount('receivable'), category: '轉帳' });
+      if (T - my > 0) add('r', { type: 'transfer', amount: T - my, account: accId, to: await splAccount('receivable'), category: '轉帳', ...(typeOf(accById(accId) || {}) === 'card' ? { rw: true, rwCat: b.cat || null } : {}) });
     } else if (my > 0) add('e', { type: 'expense', amount: my, account: await splAccount('loan'), category: b.cat || '餐飲' });
-  } else if (b.kind === 'lend') add('t', { type: 'transfer', amount: T, account: accId, to: await splAccount('receivable'), category: '轉帳' });
+  } else if (b.kind === 'lend') add('t', { type: 'transfer', amount: T, account: accId, to: await splAccount('receivable'), category: '轉帳', ...(typeOf(accById(accId) || {}) === 'card' ? { rw: true } : {}) });
   else if (b.kind === 'borrow') add('t', { type: 'transfer', amount: T, account: await splAccount('loan'), to: accId, category: '轉帳' });
   else if (b.kind === 'recv') add('t', { type: 'transfer', amount: T, account: await splAccount('receivable'), to: accId, category: '轉帳' });
   else if (b.kind === 'pay') add('t', { type: 'transfer', amount: T, account: accId, to: await splAccount('loan'), category: '轉帳' });
@@ -1347,7 +1347,7 @@ function openSplitForm(kind, bill, preset = {}) {
     const iPay = F2.kind === 'bill' ? F2.payer === 'me' : ['lend', 'pay'].includes(F2.kind);
     const iGet = ['borrow', 'recv'].includes(F2.kind);
     const showSync = F2.kind === 'bill' ? (F2.payer === 'me' || F2.people.includes('me')) : true;
-    const accList = F2.kind === 'bill' ? payables() : moneyAccounts();
+    const accList = ['bill', 'lend'].includes(F2.kind) ? payables() : moneyAccounts(); // 借出可以刷卡（幫朋友刷、自己賺回饋）；收錢、還錢只走銀行或現金
     if (!accList.some(a => a.id === F2.acc)) F2.acc = (accList[0] || {}).id || '';
     const accSel = el('select', { class: 't' }, ...accList.map(a => el('option', { value: a.id, text: a.name }))); accSel.value = F2.acc; accSel.addEventListener('change', () => F2.acc = accSel.value);
     const catSel = el('select', { class: 't' }, ...CATS.expense.filter(c => !nonLiving().has(c[0])).map(c => el('option', { value: c[0], text: c[0] }))); catSel.value = F2.cat; catSel.addEventListener('change', () => F2.cat = catSel.value);
@@ -1373,8 +1373,8 @@ function openSplitForm(kind, bill, preset = {}) {
       showSync ? el('div', { class: 'edit', style: 'margin-top:12px' },
         el('div', { class: 'sb mrow0', style: 'align-items:center' }, el('span', { class: 'small', text: '同時記到我的記帳' }), el('label', { class: 'switch' }, sync, el('span'))),
         F2.sync ? el('div', { class: 'small muted', style: 'margin-top:4px', text:
-          F2.kind === 'bill' ? (F2.payer === 'me' ? '只有我負擔的那一份算花費，其餘記成「朋友欠我」。' : '我負擔的那一份記成花費，同時記在「我欠朋友」。')
-          : F2.kind === 'lend' ? '從帳戶轉到「朋友欠我」，不算花費。' : F2.kind === 'borrow' ? '錢進到帳戶，同時記在「我欠朋友」，不算收入。'
+          F2.kind === 'bill' ? (F2.payer === 'me' ? '只有我負擔的那一份算花費，其餘記成「朋友欠我」；刷卡的整筆都算回饋。' : '我負擔的那一份記成花費，同時記在「我欠朋友」。')
+          : F2.kind === 'lend' ? '記在「朋友欠我」，不算花費；用信用卡刷的會算進卡片欠款和回饋。' : F2.kind === 'borrow' ? '錢進到帳戶，同時記在「我欠朋友」，不算收入。'
           : F2.kind === 'recv' ? '從「朋友欠我」轉回帳戶，不算收入。' : '從帳戶轉到「我欠朋友」抵銷，不算花費。' }) : null,
         F2.sync && (iPay || iGet) ? L(iPay ? '從哪個帳戶付' : '錢進到哪個帳戶', accSel) : null,
         F2.sync && F2.kind === 'bill' && F2.people.includes('me') ? L('我的那一份記在哪個分類', catSel) : null) : null,

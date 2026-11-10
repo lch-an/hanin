@@ -161,7 +161,7 @@
     let used = 0;
     for (const t of txns) {
       if (t.type !== 'expense' || t.account !== account || !t.date || t.date < from || t.date > date) continue;
-      const r = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
+      const r = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan);
       if (r && r.id === rule.id) used += Number(t.amount) * Number(rule.rate) / 100;
     }
     return Math.min(used, rule.cap_amount);
@@ -205,7 +205,7 @@
    */
   function monthRewards({ month, accounts, cards, txns }) {
     const used = new Map(), per = new Map();
-    const list = txns.filter(t => t.type === 'expense' && (t.date || '').slice(0, 7) === month)
+    const list = txns.filter(t => (t.type === 'expense' || (t.type === 'transfer' && t.rw)) && (t.date || '').slice(0, 7) === month)
       .slice().sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || 0) - (b.createdAt || 0));
     for (const t of list) {
       const acc = accounts.find(a => a.id === t.account); if (!acc || !acc.cardId) continue;
@@ -214,7 +214,7 @@
       const amt = Number(t.amount) || 0;
       const row = per.get(acc.id) || { account: acc, card, spend: 0, reward: 0, n: 0 };
       row.spend += amt; row.n++;
-      const rule = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
+      const rule = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan);
       if (rule) {
         let r = amt * Number(rule.rate) / 100;
         if (rule.cap_amount) {
@@ -240,13 +240,13 @@
     const starts = rules.map(r => r.cap_period === 'campaign' ? (r.valid_from || '0000-01-01') : periodStart(r.cap_period || 'month', date));
     const from = [periodStart('month', date), ...starts].sort()[0];
     const used = new Map(), stat = new Map();
-    const list = txns.filter(t => t.type === 'expense' && t.account === account.id && t.date >= from && t.date <= date)
+    const list = txns.filter(t => (t.type === 'expense' || (t.type === 'transfer' && t.rw)) && t.account === account.id && t.date >= from && t.date <= date)
       .slice().sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
     let monthReward = 0, monthSpend = 0;
     const m0 = date.slice(0, 7);
     for (const t of list) {
       const amt = Number(t.amount) || 0;
-      const rule = bestRule(card, tagsFor({ note: t.note, category: t.category, via: t.via }), t.date, plan);
+      const rule = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan);
       let r = 0;
       if (rule) {
         r = amt * Number(rule.rate) / 100;
