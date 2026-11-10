@@ -59,6 +59,9 @@ button{font:inherit;color:inherit}
 .list li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list li:last-child{border-bottom:0}
 html.pswipe,html.pswipe body{overflow-x:hidden}
+#v-home,#v-ledger,#v-stats,#v-assets,#v-me{touch-action:pan-y}
+/* 滑動中暫停卡片的毛玻璃（最吃效能），放開後恢復 */
+html.pswipe #v-home *,html.pswipe #v-ledger *,html.pswipe #v-stats *,html.pswipe #v-assets *,html.pswipe #v-me *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
 html.pswipe{overscroll-behavior-x:none}
 details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent}
 details.fold>summary::-webkit-details-marker{display:none}
@@ -597,6 +600,7 @@ body{background:transparent}
     <div id="viaBox"><div class="lbl">怎麼付</div><div class="accs vias" id="vias"></div></div>
     <div class="lbl" id="accLbl">付款方式</div>
     <div class="accs" id="accs"></div>
+    <div id="planBox" hidden><div class="lbl" id="planLbl">現在是哪個方案</div><div class="accs" id="plans"></div><div class="small muted" id="planNote" style="margin-top:2px"></div></div>
     <div id="recBox" class="rec" hidden></div>
     <div id="toBox" hidden><div class="lbl">轉入／繳哪一個</div><div class="accs" id="tos"></div></div>
     <div class="sb" style="margin-top:6px">
@@ -682,7 +686,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v40';
+const APP_VER = 'v41';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -787,6 +791,7 @@ function renderSheet() {
   const accShown = F.accsOpen || srcs.length <= 6 ? srcs : (() => { const top = srcs.slice(0, 5); const cur = srcs.find(a => a.id === F.acc); return cur && !top.includes(cur) ? [...top.slice(0, 4), cur] : top; })();
   $('#accs').replaceChildren(...accShown.map(a => el('button', { type: 'button', class: a.id === F.acc ? 'on' : '', text: a.name, onclick: () => { F.acc = a.id; F.accTouched = true; renderSheet(); } })),
     srcs.length > 6 ? el('button', { type: 'button', class: 'more', text: F.accsOpen ? '收起' : `更多 ${srcs.length - accShown.length}`, onclick: () => { F.accsOpen = !F.accsOpen; renderSheet(); } }) : '');
+  renderPlanBox();
   if (isT) {
     const tos = transferables().filter(a => a.id !== F.acc);
     if (!tos.some(a => a.id === F.to)) F.to = ((tos.find(a => typeOf(a) === 'card')) || tos[0] || {}).id || null;
@@ -854,7 +859,7 @@ function renderTemplates() {
     const t = p.t, ic = '';
     const label = `${t.note || t.category}` + (p.steady ? ` $${fmt.format(p.med)}` : '');
     return el('button', { type: 'button', title: `${t.category}・${t.via ? t.via + '・' : ''}${accName(t.account)}`, onclick: () => {
-      F.cat = t.category; F.via = t.via || ''; F.acc = t.account; F.accTouched = true;
+      F.cat = t.category; F.via = t.via || ''; F.acc = t.account; F.accTouched = true; F.plan = null;
       $('#fNote').value = t.note || '';
       if (p.steady && !F.expr) F.expr = String(p.med);
       renderSheet();
@@ -878,8 +883,8 @@ async function pickVia(v) {
 }
 function openSheet(tx, presetDate) {
   if (!S.db) { toast('目前無法記帳'); return; }
-  if (tx) Object.assign(F, { id: tx.id, type: tx.type, cat: tx.category, acc: tx.account, to: tx.to || null, via: tx.via || '', date: tx.date, expr: String(tx.amount), accTouched: true });
-  else Object.assign(F, { id: null, type: 'expense', date: presetDate || todayStr(), expr: '', via: lastVia, acc: lastExpenseAcc || F.acc, accTouched: false });
+  if (tx) Object.assign(F, { id: tx.id, type: tx.type, cat: tx.category, acc: tx.account, to: tx.to || null, via: tx.via || '', date: tx.date, expr: String(tx.amount), accTouched: true, plan: null, planKeep: tx.plan || null });
+  else Object.assign(F, { id: null, type: 'expense', date: presetDate || todayStr(), expr: '', via: lastVia, acc: lastExpenseAcc || F.acc, accTouched: false, plan: null, planKeep: null });
   $('#fNote').value = tx ? (tx.note || '') : '';
   $('#delTx').classList.remove('sure'); $('#delTx').textContent = '刪除';
   renderSheet();
@@ -895,6 +900,10 @@ async function submit() {
   if (F.type === 'transfer' && (!F.to || F.to === F.acc)) { toast('請選轉入的帳戶'); return; }
   const doc = { type: F.type, amount, date: F.date || todayStr(), account: F.acc, via: F.type === 'expense' && F.via ? F.via : null, note: $('#fNote').value.trim().slice(0, 60) };
   if (F.type === 'transfer') { doc.to = F.to; doc.category = typeOf(accById(F.to) || {}) === 'card' ? '繳卡費' : '轉帳'; } else doc.category = F.cat;
+  const pinfo = F.type === 'expense' ? cardPlansFor(F.acc) : null;
+  doc.plan = pinfo && F.plan && F.planAcc === F.acc ? F.plan : null;
+  // 今天選的方案就是卡片目前的方案，之後推薦、回饋都照這個算
+  if (doc.plan && doc.date === todayStr() && pinfo.a.cardPlan !== doc.plan) { try { S.db.doc('accounts/' + pinfo.a.id).update({ cardPlan: doc.plan }); pinfo.a.cardPlan = doc.plan; } catch {} }
   $('#okBtn').disabled = true;
   try {
     if (F.id) { const old = allTx().find(t => t.id === F.id); await S.db.doc('txns/' + F.id).set({ ...doc, createdAt: old?.createdAt || Date.now() }); toast('已更新'); }
@@ -1450,7 +1459,7 @@ function renderMonthRewards() {
   box.hidden = false;
   $('#rwTotal').textContent = money(total);
   put($('#rwList'), rows.length ? rows.map(r => el('div', { class: 'spl-f', style: 'cursor:pointer', onclick: () => openCardInfo(r.card, r.account) },
-      el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || '未設定'}` : '') + (() => { const u = HanRewards.cardUsage({ account: r.account, card: r.card, txns: allTx(), date: todayStr() }); const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0]; return near ? (near.left <= 0 ? `・${near.rule.channel}已拿滿` : `・${near.rule.channel}還能拿 ${money(near.left)}`) : ''; })() })),
+      el('div', { class: 'n' }, el('div', { text: r.account.name }), el('div', { class: 'small muted', style: 'font-weight:400', text: `刷 ${money(r.spend)}・${r.n} 筆` + (HanRewards.plansOf(r.card).length ? `・方案 ${r.account.cardPlan || HanRewards.defaultPlan(r.card) || '未設定'}` : '') + (() => { const u = HanRewards.cardUsage({ account: r.account, card: r.card, txns: allTx(), date: todayStr() }); const near = u.rules.filter(x => x.cap != null && x.n).sort((x, y) => x.left - y.left)[0]; return near ? (near.left <= 0 ? `・${near.rule.channel}已拿滿` : `・${near.rule.channel}還能拿 ${money(near.left)}`) : ''; })() })),
       el('div', { class: 'amt num inc', text: money(r.reward) }))) : el('div', { class: 'small muted', text: '這個月還沒有用信用卡記帳。' }), looseNote,
     el('div', { class: 'small muted', style: 'margin-top:6px', text: '依你記的每筆消費、當時切的方案和每條回饋上限估算，實際以銀行帳單為準。點卡片可以看每個通路已拿多少、還剩多少額度。' }));
 }
@@ -1746,7 +1755,7 @@ function accMeta(a) {
     const cyc = allTx().filter(x => x.type === 'expense' && x.account === a.id && x.date >= cs).reduce((s, x) => s + x.amount, 0);
     bits.push(`${a.closeDay} 日結帳・${a.dueDay || '?'} 日扣款・本期記帳 ${money(cyc)}`);
   }
-  if (ty === 'card' && a.cardId) { const c = CARDS.byId.get(a.cardId); bits.push(c ? (HanRewards.plansOf(c).length ? `方案：${a.cardPlan || '未設定'}・` : '') + '回饋：' + rewardSummary(c, a.cardPlan || undefined) : '卡片資料讀取中'); }
+  if (ty === 'card' && a.cardId) { const c = CARDS.byId.get(a.cardId); bits.push(c ? (HanRewards.plansOf(c).length ? `方案：${a.cardPlan || HanRewards.defaultPlan(c) || '未設定'}・` : '') + '回饋：' + rewardSummary(c, a.cardPlan || undefined) : '卡片資料讀取中'); }
   if ((a.wallets || []).length) bits.push('綁定 ' + a.wallets.join('、'));
   if (a.note) bits.push(a.note);
   return bits.join('｜');
@@ -2059,7 +2068,9 @@ function renderBudgetCard() {
   } })));
 }
 let view = 'home';
+let renderSeq = 0; const preSeq = {};
 function render() {
+  renderSeq++; preSeq[view] = renderSeq; schedulePrerender();
   if (view === 'home') renderHome();
   if (view === 'ledger' && document.activeElement !== $('#q')) renderLedger();
   if (view === 'stats') renderStats();
@@ -2100,10 +2111,18 @@ function renderView(v) {
   if (v === 'assets') renderAssets();
   if (v === 'me') { renderMeal(); renderMe(); renderFaceSetting(); renderBudgetCard(); updateBudgetMode(); }
 }
-let pageSwiping = false;
+let pageSwiping = false, preTimer = null;
+// 左右相鄰的頁面先在背景畫好，滑的時候不用現畫（避免一開始卡一下）
+function schedulePrerender() {
+  clearTimeout(preTimer);
+  preTimer = setTimeout(() => {
+    const go = () => { const i = pageIdx(view); for (const v of [PAGE_ORDER[i - 1], PAGE_ORDER[i + 1]]) if (v && preSeq[v] !== renderSeq && $('#v-' + v).hidden) { try { renderView(v); preSeq[v] = renderSeq; } catch {} } };
+    window.requestIdleCallback ? requestIdleCallback(go, { timeout: 1200 }) : go();
+  }, 250);
+}
 (function setupPageSwipe() {
-  const EASE = 'cubic-bezier(.22,.8,.24,1)';
-  let x0 = 0, y0 = 0, t0 = 0, ok = false, lock = null, cur = null, nxt = null, target = null, W = 0, lastX = 0, lastT = 0, vel = 0, dx = 0;
+  const EASE = 'cubic-bezier(.25,1,.5,1)'; // 快速起步、柔和減速停下（接近 iOS 換頁的手感）
+  let dirL = 1, x0 = 0, y0 = 0, t0 = 0, ok = false, lock = null, cur = null, nxt = null, target = null, W = 0, lastX = 0, lastT = 0, vel = 0, dx = 0;
   const blocked = (t) => !!t.closest('input,textarea,select,button.swdel,nav,.gseg,.vsw,.seg,.accs,.datechips,.tpl,.sheet,#pModal,.lock,[data-noswipe]') || (() => { for (let n = t; n && n !== document.body; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; })();
   const reset = (el) => { if (!el) return; el.style.transition = ''; el.style.transform = ''; el.style.position = ''; el.style.top = ''; el.style.left = ''; el.style.width = ''; el.style.zIndex = ''; el.style.willChange = ''; el.style.pointerEvents = ''; };
   const begin = (dir) => {
@@ -2113,26 +2132,26 @@ let pageSwiping = false;
     cur.style.willChange = 'transform';
     if (target) {
       nxt = $('#v-' + target);
-      try { renderView(target); } catch {}
+      if (preSeq[target] !== renderSeq) { try { renderView(target); preSeq[target] = renderSeq; } catch {} }
       nxt.hidden = false;
-      Object.assign(nxt.style, { position: 'fixed', top: (cur.offsetTop) + 'px', left: r.left + 'px', width: r.width + 'px', zIndex: '1', willChange: 'transform', pointerEvents: 'none', transform: `translateX(${dir * W}px)` });
+      Object.assign(nxt.style, { position: 'fixed', top: (cur.offsetTop) + 'px', left: r.left + 'px', width: r.width + 'px', zIndex: '1', willChange: 'transform', pointerEvents: 'none', transform: `translate3d(${dir * W}px,0,0)` });
     }
   };
   const move = (x) => {
-    const dir = dx < 0 ? 1 : -1;
+    const dir = dirL;
     const d = target ? x : x * 0.25; // 沒有下一頁時像橡皮筋
-    cur.style.transform = `translateX(${d}px)`;
-    if (nxt) nxt.style.transform = `translateX(${d + dir * W}px)`;
+    cur.style.transform = `translate3d(${d}px,0,0)`;
+    if (nxt) nxt.style.transform = `translate3d(${d + dir * W}px,0,0)`;
   };
   const finish = (go) => {
-    const dir = dx < 0 ? 1 : -1, dur = Math.max(160, Math.min(320, (go ? W - Math.abs(dx) : Math.abs(dx)) / Math.max(0.6, Math.abs(vel)) )) | 0;
+    // 放開時沿用手指的速度：甩得快就短、慢慢拉就長一點，最後用減速曲線停下（像 iOS）
+    const dir = dirL, left = go ? W - Math.abs(dx) : Math.abs(dx);
+    const dur = Math.round(Math.max(180, Math.min(420, left / Math.max(0.9, Math.abs(vel)) * 1.6)));
     const tr = `transform ${dur}ms ${EASE}`;
     const c = cur, n = nxt, t = target, w = W;
     c.style.transition = tr; if (n) n.style.transition = tr;
-    requestAnimationFrame(() => {
-      c.style.transform = go ? `translateX(${-dir * w}px)` : 'translateX(0)';
-      if (n) n.style.transform = go ? 'translateX(0)' : `translateX(${dir * w}px)`;
-    });
+    c.style.transform = go ? `translate3d(${-dir * w}px,0,0)` : 'translate3d(0,0,0)';
+    if (n) n.style.transform = go ? 'translate3d(0,0,0)' : `translate3d(${dir * w}px,0,0)`;
     setTimeout(() => {
       if (go && t) { pageSwiping = true; reset(n); c.hidden = true; reset(c); location.hash = '#' + t; setTimeout(() => { pageSwiping = false; }, 50); }
       else { reset(c); if (n) { n.hidden = true; reset(n); } }
@@ -2141,28 +2160,28 @@ let pageSwiping = false;
     cur = nxt = target = null; lock = null;
   };
   document.addEventListener('touchstart', (e) => {
-    const p = e.touches[0]; x0 = lastX = p.clientX; y0 = p.clientY; t0 = lastT = Date.now(); lock = null; dx = 0; vel = 0;
+    const p = e.touches[0]; x0 = lastX = p.clientX; y0 = p.clientY; t0 = Date.now(); lastT = performance.now(); lock = null; dx = 0; vel = 0;
     ok = e.touches.length === 1 && x0 > 16 && x0 < innerWidth - 16 && pageIdx(view) >= 0 && !$('#sheet').classList.contains('on') && $('#pModal').hidden && !blocked(e.target) && !document.documentElement.classList.contains('pswipe');
   }, { passive: true });
   document.addEventListener('touchmove', (e) => {
     if (!ok || window.__rowSwipe) { if (lock === 'h') finish(false); ok = false; return; }
     const p = e.touches[0], mx = p.clientX - x0, my = p.clientY - y0;
     if (!lock) {
-      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
-      if (Math.abs(mx) > Math.abs(my) * 1.3) {
+      if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+      if (Math.abs(mx) > Math.abs(my) * 1.2) {
         if (swOpenLi && swOpenLi.isConnected) { swClose(swOpenLi); ok = false; return; }
         if (mx < 0 && e.target.closest && e.target.closest('li.sw')) { ok = false; return; } // 在記帳紀錄上往左滑是刪除
-        lock = 'h'; dx = mx; begin(mx < 0 ? 1 : -1);
+        lock = 'h'; x0 = p.clientX; dx = 0; begin(mx < 0 ? 1 : -1); dirL = mx < 0 ? 1 : -1;
       } else { lock = 'v'; ok = false; return; }
     }
     if (lock !== 'h') return;
     if (e.cancelable) e.preventDefault();
-    const now = Date.now(); vel = (p.clientX - lastX) / Math.max(1, now - lastT); lastX = p.clientX; lastT = now;
-    dx = mx; move(mx);
+    const now = performance.now(), dt = Math.max(1, now - lastT), v1 = (p.clientX - lastX) / dt; vel = vel * 0.6 + v1 * 0.4; lastX = p.clientX; lastT = now;
+    dx = p.clientX - x0; if (dx * -dirL < 0) dx = 0; move(dx);
   }, { passive: false });
   const end = () => {
     if (lock !== 'h') { ok = false; return; }
-    const go = !!target && (Math.abs(dx) > W * 0.28 || (Math.abs(vel) > 0.45 && Math.sign(vel) === Math.sign(dx)));
+    const go = !!target && (Math.abs(dx) > W * 0.25 || (Math.abs(vel) > 0.3 && Math.sign(vel) === -dirL && Math.abs(dx) > 16));
     finish(go); ok = false;
   };
   document.addEventListener('touchend', end, { passive: true });
@@ -2310,12 +2329,33 @@ function cardPicker(cur, curPlan) {
   const info = el('button', { class: 'x', type: 'button', style: 'margin-top:4px', text: '看這張卡的回饋規則', onclick: () => { const c = CARDS.byId.get(card.value); if (c) openCardInfo(c); else toast('先選一張卡'); } });
   return { node: el('div', {}, el('div', { class: 'grid2', style: 'margin:0' }, bank, card), info, planRow, ai), value: () => card.value, plan: () => (planRow.hidden ? '' : plan.value) };
 }
+// 有方案的卡（例如 CUBE）：選卡之後問現在是哪個方案；同一天已經記過的方案自動帶入（每天只能切一次）
+function cardPlansFor(accId) {
+  const a = accById(accId); if (!a || typeOf(a) !== 'card' || !a.cardId) return null;
+  const c = CARDS.byId.get(a.cardId); if (!c) return null;
+  const plans = HanRewards.plansOf(c); return plans.length ? { a, c, plans } : null;
+}
+function dayPlanOf(accId, date, exceptId) {
+  const t = allTx().filter(x => x.account === accId && x.date === date && x.plan && x.id !== exceptId).sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0))[0];
+  return t ? t.plan : null;
+}
+function renderPlanBox() {
+  const box = $('#planBox'); if (!box) return;
+  const info = F.type === 'expense' ? cardPlansFor(F.acc) : null;
+  if (!info) { box.hidden = true; F.plan = null; return; }
+  const date = F.date || todayStr(), dayPlan = dayPlanOf(F.acc, date, F.id);
+  if (!F.plan || F.planAcc !== F.acc || F.planDate !== date) { F.plan = (F.id && F.planKeep) || dayPlan || info.a.cardPlan || HanRewards.defaultPlan(info.c) || null; F.planAcc = F.acc; F.planDate = date; }
+  box.hidden = false;
+  $('#planLbl').textContent = `${info.a.name} 現在是哪個方案`;
+  $('#plans').replaceChildren(...info.plans.map(p => el('button', { type: 'button', class: p === F.plan ? 'on' : '', text: p, onclick: () => { F.plan = p; F.planAcc = F.acc; F.planDate = date; renderSheet(); } })));
+  $('#planNote').textContent = !F.plan ? '還沒選方案，只會算一般回饋' : dayPlan && dayPlan !== F.plan ? `這天之前記的是「${dayPlan}」，每天只能切換一次，確定要改嗎？` : dayPlan ? '這天已經是這個方案（每天只能切換一次）' : '';
+}
 function renderRec() {
   const box = $('#recBox'); if (!box) return;
   const myCards = payables().filter(a => typeOf(a) === 'card' && a.cardId && CARDS.byId.has(a.cardId));
   if (F.type !== 'expense' || !myCards.length) { box.hidden = true; return; }
   const amount = evalExpr(F.expr);
-  const recs = HanRewards.recommend({ amount, note: $('#fNote').value, category: F.cat, via: F.via, date: F.date || todayStr(), accounts: myCards, cards: CARDS.byId, txns: allTx() });
+  const recs = HanRewards.recommend({ amount, note: $('#fNote').value, category: F.cat, via: F.via, date: F.date || todayStr(), accounts: myCards, cards: CARDS.byId, txns: allTx().filter(t => t.id !== F.id), plans: F.plan && F.planAcc ? { [F.planAcc]: F.plan } : {} });
   if (!recs.length) { box.hidden = true; return; }
   const top = recs[0];
   box.hidden = false;

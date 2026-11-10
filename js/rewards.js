@@ -141,6 +141,10 @@
   /** 一張卡對某筆消費最適用的規則：沒有標籤的規則適用所有消費，有標籤的要符合其中一個；取回饋最高的 */
   /** 這張卡有哪些可切換的權益方案 */
   function plansOf(card) { return [...new Set((card.card_rewards || []).map(r => r.plan).filter(Boolean))]; }
+  /** 這筆消費用哪個方案算：記帳時選的方案優先，沒有就用帳戶目前的方案 */
+  // 沒選方案時銀行預設的方案（CUBE 卡沒切就是「集精選」）
+  function defaultPlan(card) { const ps = plansOf(card); if (card.default_plan && ps.includes(card.default_plan)) return card.default_plan; return /cube/i.test(card.name || '') && ps.includes('集精選') ? '集精選' : null; }
+  function planOf(t, plans, accPlan, card) { return plans.length ? (t.plan || accPlan || (card ? defaultPlan(card) : null) || null) : undefined; }
   /** plan：使用者目前切到的方案；undefined＝不管方案（找所有方案裡最好的） */
   function bestRule(card, tags, date, plan) {
     let best = null;
@@ -160,8 +164,8 @@
     const from = rule.cap_period === 'campaign' ? (rule.valid_from || '0000') : periodStart(rule.cap_period || 'month', date);
     let used = 0;
     for (const t of txns) {
-      if (t.type !== 'expense' || t.account !== account || !t.date || t.date < from || t.date > date) continue;
-      const r = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan);
+      if (!(t.type === 'expense' || (t.type === 'transfer' && t.rw)) || t.account !== account || !t.date || t.date < from || t.date > date) continue;
+      const r = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan === undefined ? undefined : (t.plan || plan));
       if (r && r.id === rule.id) used += Number(t.amount) * Number(rule.rate) / 100;
     }
     return Math.min(used, rule.cap_amount);
@@ -172,6 +176,7 @@
    * @param {object} p { amount, note, category, via, date, accounts(使用者的信用卡帳戶，含 cardId), cards(Map id→卡片資料), txns }
    * @returns 由高到低排序的 [{ account, card, rule, rate, reward, capLeft }]
    */
+  function plans0(card) { return plansOf(card).length > 0; }
   function recommend(p) {
     const tags = tagsFor(p), date = p.date, amt = Number(p.amount) || 0;
     const out = [];
@@ -179,7 +184,8 @@
       const card = acc.cardId && p.cards.get(acc.cardId);
       if (!card) continue;
       // 有方案的卡：只用目前切到的方案（沒設定＝只算不分方案的規則），另外提示「切換到哪個方案更划算」
-      const plans = plansOf(card), plan = plans.length ? (acc.cardPlan || null) : undefined;
+      const today = plans0(card) && (p.txns || []).find(t => t.account === acc.id && t.date === date && t.plan);
+      const plans = plansOf(card), plan = plans.length ? ((p.plans && p.plans[acc.id]) || (today && today.plan) || acc.cardPlan || defaultPlan(card) || null) : undefined;
       const rule = bestRule(card, tags, date, plan);
       const alt = plans.length ? bestRule(card, tags, date) : null;
       const switchTo = alt && alt.plan && alt.plan !== plan && Number(alt.rate) > Number(rule ? rule.rate : 0) ? { plan: alt.plan, rate: Number(alt.rate), rule: alt } : null;
@@ -210,7 +216,7 @@
     for (const t of list) {
       const acc = accounts.find(a => a.id === t.account); if (!acc || !acc.cardId) continue;
       const card = cards.get(acc.cardId); if (!card) continue;
-      const plans = plansOf(card), plan = plans.length ? (acc.cardPlan || null) : undefined;
+      const plan = planOf(t, plansOf(card), acc.cardPlan, card);
       const amt = Number(t.amount) || 0;
       const row = per.get(acc.id) || { account: acc, card, spend: 0, reward: 0, n: 0 };
       row.spend += amt; row.n++;
@@ -233,7 +239,7 @@
    * 每筆消費用當時切的方案找最適用的規則，並照上限扣掉；期別依規則（每月／每季／每年／活動期間）。
    */
   function cardUsage({ account, card, txns, date }) {
-    const plans = plansOf(card), plan = plans.length ? (account.cardPlan || null) : undefined;
+    const plans = plansOf(card), plan = plans.length ? (account.cardPlan || defaultPlan(card) || null) : undefined;
     const rules = card.card_rewards || [];
     const pkey = (r, d) => r.cap_period === 'campaign' ? 'c' : periodStart(r.cap_period || 'month', d);
     // 往回看到最早需要的一期（季、年上限要從季初／年初算）
@@ -246,7 +252,7 @@
     const m0 = date.slice(0, 7);
     for (const t of list) {
       const amt = Number(t.amount) || 0;
-      const rule = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, plan);
+      const rule = bestRule(card, tagsFor({ note: t.note, category: t.rwCat || t.category, via: t.via }), t.date, planOf(t, plans, account.cardPlan, card));
       let r = 0;
       if (rule) {
         r = amt * Number(rule.rate) / 100;
@@ -255,7 +261,7 @@
       }
       if (t.date.slice(0, 7) === m0) { monthReward += r; monthSpend += amt; }
     }
-    const out = rules.filter(r => plan === undefined || !r.plan || r.plan === plan).map(rule => {
+    const out = rules.filter(r => plan === undefined || !r.plan || r.plan === plan || (stat.get(r.id) || {}).n).map(rule => {
       const st = stat.get(rule.id) || { spend: 0, reward: 0, n: 0 };
       const cap = rule.cap_amount ? Number(rule.cap_amount) : null;
       const left = cap == null ? null : Math.max(0, cap - st.reward);
@@ -264,6 +270,6 @@
     return { plan, rules: out, monthReward, monthSpend };
   }
 
-  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf, monthRewards, cardUsage };
+  const api = { TAGS, LABELS, tagsFor, bestRule, usedReward, recommend, plansOf, planOf, defaultPlan, monthRewards, cardUsage };
   if (typeof module !== 'undefined') module.exports = api; else root.HanRewards = api;
 })(typeof window !== 'undefined' ? window : globalThis);
