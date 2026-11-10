@@ -62,8 +62,6 @@ html.pswipe,html.pswipe body{overflow-x:hidden}
 .wrap.pg{display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
 .wrap.pg>section.pg-a{grid-area:2/1}
 #v-home,#v-ledger,#v-stats,#v-assets,#v-me{touch-action:pan-y}
-/* 滑動中暫停卡片的毛玻璃（最吃效能），放開後恢復 */
-html.pswipe #v-home *,html.pswipe #v-ledger *,html.pswipe #v-stats *,html.pswipe #v-assets *,html.pswipe #v-me *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
 html.pswipe{overscroll-behavior-x:none}
 details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent}
 details.fold>summary::-webkit-details-marker{display:none}
@@ -688,7 +686,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v43';
+const APP_VER = 'v44';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -2174,7 +2172,7 @@ function schedulePrerender() {
         c.hidden = true; reset(c); reset(n); $('#appWrap').classList.remove('pg');
         pageSwiping = true; history.pushState(null, '', '#' + t); route(); pageSwiping = false;
       } else { reset(c); if (n) { n.hidden = true; reset(n); } $('#appWrap').classList.remove('pg'); }
-      requestAnimationFrame(() => document.documentElement.classList.remove('pswipe')); // 下一幀再恢復毛玻璃，分散重繪
+      document.documentElement.classList.remove('pswipe');
     };
     (n || c).addEventListener('transitionend', settle, { once: true });
     setTimeout(settle, dur + 60);
