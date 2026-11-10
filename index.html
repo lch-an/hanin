@@ -58,6 +58,12 @@ button{font:inherit;color:inherit}
 .list{list-style:none;margin:0;padding:0}
 .list li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list li:last-child{border-bottom:0}
+details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary h2{margin:0}
+details.fold>summary::after{content:'›';font-size:22px;line-height:1;color:var(--muted);transition:transform .2s}
+details.fold[open]>summary::after{transform:rotate(90deg)}
+details.fold[open]>summary{margin-bottom:10px}
 .list li.sw{position:relative;overflow:hidden;padding:0;display:block}
 .list li.sw>.swin{display:flex;align-items:center;gap:12px;padding:10px 2px;transition:transform .2s ease;will-change:transform}
 .list li.dayitems .list li.sw{padding:0}.list li.dayitems .list li.sw>.swin{padding:8px 2px}
@@ -478,13 +484,13 @@ body{background:transparent}
       <div class="sb mrow" id="adminRow" hidden><div><b style="font-size:14px">回饋資料管理</b><div class="small muted">維護信用卡回饋資料（管理員）</div></div><a class="btn ghost" href="#admin" style="white-space:nowrap;text-decoration:none">開啟</a></div>
     </div>
     <div class="card"><div class="sb"><div><h2 style="margin:0">信用卡回饋</h2><div class="small muted">我的卡拿了多少、還剩多少額度；也能查其他卡</div></div><button class="btn ghost" id="cardBrowse" type="button">查看</button></div></div>
-    <div class="card" id="uiCard"><h2>介面設定 <small>只影響這台裝置</small></h2>
+    <details class="card fold" id="uiCard"><summary><h2>介面設定 <small>只影響這台裝置</small></h2></summary>
       <div class="sb mrow0"><div><b style="font-size:14px">首頁最近紀錄</b><div class="small muted">打開 App 時先看清單還是月曆</div></div><div class="seg mini" id="prefHome"><button data-v="list" type="button">清單</button><button data-v="cal" type="button">月曆</button></div></div>
       <div class="sb mrow0"><div><b style="font-size:14px">資產頁預設分頁</b></div><select class="t" id="prefAsset" style="max-width:130px"></select></div>
       <div class="sb mrow0"><div><b style="font-size:14px">文字大小</b></div><div class="seg mini" id="prefZoom"><button data-v="0.9" type="button">小</button><button data-v="1" type="button">標準</button><button data-v="1.12" type="button">大</button></div></div>
       <div class="sb mrow0" id="faceRow" hidden><div><b style="font-size:14px">Face ID 解鎖</b><div class="small muted">預設關閉，打開 App 就能直接用。想要隱私再開：打開 App 或離開超過 1 分鐘回來時要先通過 Face ID，辨識在手機上完成，不會上傳</div></div><label class="switch"><input type="checkbox" id="prefFace"><span></span></label></div>
       <div class="sb mrow0"><div><b style="font-size:14px">隱藏金額</b><div class="small muted">在外面打開 App 時，金額先模糊處理，點一下才顯示</div></div><label class="switch"><input type="checkbox" id="prefHide"><span></span></label></div>
-    </div>
+    </details>
     <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
       <div class="bcalc">
         <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 29500（2026 年基本工資）"><span class="small" id="bIncNote"></span></label>
@@ -509,31 +515,23 @@ body{background:transparent}
       <div class="formula" id="bFormula"></div>
       <div class="flex" style="margin-top:10px"><label class="small muted" style="white-space:nowrap">目前預算</label><input class="t num" id="setBudget" inputmode="numeric"><button class="btn ghost" id="useSuggest" type="button" style="white-space:nowrap">用建議值</button><button class="btn" id="setBudgetBtn" type="button" style="white-space:nowrap">儲存</button></div>
       <div class="small muted" id="budgetMode" style="margin-top:4px"></div>
-      <div class="small muted" style="margin-top:10px;line-height:1.7">
-        算法：實領薪水 − 先存起來的 − 每月訂閱 − 其他固定支出 ＝ 每月可以花的生活費。<br>
-        例如實領 40,000、先存 25%（10,000），再扣掉上面的訂閱，剩下的就是建議生活費。加薪或換工作時，把薪水改掉就會重新計算。<br>
-        獎金、補貼這類不固定的收入建議另外存起來，不算進生活費。
-      </div>
-      <div class="lbl" style="margin-top:12px">哪些分類不算生活費（點一下切換）</div>
-      <div class="chips" id="nonLiving"></div>
-      <div class="small muted" style="margin-top:6px">這些分類一樣可以記帳（例如之後要自己付房租、或自己繳附約保費），只是會算在「固定支出」，不會吃掉生活費預算。</div>
+      <div class="small muted" style="margin-top:10px">算法：實領薪水 − 先存起來的 − 訂閱 − 其他固定支出 ＝ 每月生活費。獎金等不固定收入不算進去。</div>
     </div>
-    <div class="card" id="mealCard"><h2>三餐提醒 <small>到時間問你吃什麼</small></h2><div id="mealBox"></div></div>
-    <div class="card" id="dataCard"><h2>資料與提醒 <small>備份是額外的保險</small></h2>
+    <details class="card fold" id="mealCard"><summary><h2>三餐提醒 <small>到時間問你吃什麼</small></h2></summary><div id="mealBox"></div></details>
+    <details class="card fold" id="dataCard"><summary><h2>資料與提醒 <small>扣款提醒、備份</small></h2></summary>
       <div class="sb" style="margin-bottom:10px" id="remindRow"><div><b style="font-size:14px">扣款提醒</b><div class="small muted">信用卡扣款日前一天、訂閱扣款當天晚上 8 點提醒你</div></div><button class="btn ghost" id="remindBtn" type="button" style="white-space:nowrap">開啟</button></div>
       <div class="sb" style="margin-bottom:10px"><div><b style="font-size:14px">匯出備份</b><div class="small muted">下載一份 JSON 檔自己保存</div></div><button class="btn ghost" id="exportBtn" type="button" style="white-space:nowrap">匯出</button></div>
       <div class="sb"><div><b style="font-size:14px">匯入備份</b><div class="small muted">會用備份檔的內容取代帳號裡目前所有資料</div></div><label class="btn ghost" style="white-space:nowrap;cursor:pointer">選擇檔案<input type="file" id="importFile" accept=".json,application/json" hidden></label></div>
       <div id="importConfirm" class="edit" hidden></div>
-    </div>
-    <div class="card"><h2>關於</h2>
+    </details>
+    <details class="card fold" id="aboutCard"><summary><h2>關於 <small>隱私、回報問題、版本</small></h2></summary>
       <div class="sb mrow0"><span>隱私權政策與個資告知</span><a class="x" href="privacy.html" target="_blank">查看</a></div>
       <div class="small muted" id="appVer" style="margin-top:6px"></div>
       <div class="sb mrow0"><span>問題回報與建議</span><a class="x" href="mailto:hanbouger@gmail.com?subject=han%20in%20%E8%BC%B8%E5%85%A5%E8%A8%98%E5%B8%B3%20%E5%9B%9E%E5%A0%B1">寫信給我們</a></div>
-      <div class="sb mrow0"><span>版本</span><span class="small muted" id="appVer">2026.11.05</span></div>
-    </div>
-    <div class="card"><h2>危險區域</h2>
+    </details>
+    <details class="card fold" id="dangerCard"><summary><h2>刪除帳號</h2></summary>
       <div class="sb"><div><b style="font-size:14px">刪除帳號</b><div class="small muted">永久刪除帳號和所有雲端資料，無法復原。建議先匯出備份。</div></div><button class="x" id="delAccBtn" type="button" style="color:var(--exp)">刪除</button></div>
-    </div>
+    </details>
   </section>
 
   <!-- 資產 -->
@@ -670,7 +668,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v37';
+const APP_VER = 'v38';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -2032,7 +2030,7 @@ function renderBudgetCard() {
   $('#bIncNote').textContent = inc.length ? `另有固定收入：${inc.map(x => `${x.name} ${fmt.format(x.amount)}`).join('、')}（會一起算進去）` : (st.payday ? `每月 ${st.payday} 號入帳` : '');
   updateFormula();
   const nl = nonLiving();
-  $('#nonLiving').replaceChildren(...CATS.expense.map(([n, i]) => el('button', { type: 'button', class: 'chip' + (nl.has(n) ? ' on' : ''), text: `${i} ${n}`, onclick: async () => {
+  $('#nonLiving') && $('#nonLiving').replaceChildren(...CATS.expense.map(([n, i]) => el('button', { type: 'button', class: 'chip' + (nl.has(n) ? ' on' : ''), text: `${i} ${n}`, onclick: async () => {
     const set = nonLiving(); set.has(n) ? set.delete(n) : set.add(n);
     try { await S.db.doc('settings/main').set({ ...S.settings, nonLiving: [...set] }); toast(set.has(n) ? `「${n}」改成固定支出` : `「${n}」改回生活費`); } catch { toast('儲存失敗'); }
   } })));
@@ -3287,7 +3285,7 @@ if (!HanCloud.isNative && 'serviceWorker' in navigator && location.protocol === 
     setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
   }).catch(() => {}));
   let hadCtl = !!navigator.serviceWorker.controller, reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
+  navigator.serviceWorker.addEventListener && navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadCtl) { hadCtl = true; return; }
     const go = () => { if (reloaded) return; reloaded = true; location.reload(); };
     const busy = () => !$('#pModal').hidden || $('#sheet').classList.contains('on');
