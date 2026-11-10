@@ -640,8 +640,8 @@ const TYPES = {
   bank:       { label: '銀行存款',      icon: '銀', color: '#2d6a58', liab: false, flow: true },
   cash:       { label: '現金・電子支付', icon: '現', color: '#4f9e6b', liab: false, flow: true },
   card:       { label: '信用卡',        icon: '信', color: '#c2512f', liab: true,  flow: true },
-  tw_stock:   { label: '台股',          icon: '台', color: '#3f7fb3', liab: false, flow: false },
-  us_stock:   { label: '美股',          icon: '美', color: '#5a6fc0', liab: false, flow: false },
+  tw_stock:   { label: '股票（台股）',          icon: '台', color: '#3f7fb3', liab: false, flow: false },
+  us_stock:   { label: '股票（美股）',          icon: '美', color: '#5a6fc0', liab: false, flow: false },
   insurance:  { label: '保險',          icon: '保', color: '#8a63c2', liab: false, flow: false },
   receivable: { label: '應收・借出',     icon: '應', color: '#c49a2c', liab: false, flow: true },
   loan:       { label: '貸款・負債',     icon: '貸', color: '#a0522d', liab: true,  flow: true },
@@ -670,7 +670,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v36';
+const APP_VER = 'v37';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -1680,7 +1680,9 @@ function accEditor(acc, onDone, preset) {
       el('div', { class: 'small muted', style: 'margin-top:4px', text: '金額只算結帳日以前刷的；結帳日之後刷的會留到下一期。' })));
   const cp = cardPicker(acc.cardId, acc.cardPlan);
   const rowPick = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '這是哪張卡？（用來算回饋）' }), cp.node);
-  const rowStock = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '股數（選填）' }), shares), el('div', {}, el('label', { text: '股價（選填）' }), price));
+  const sym = el('input', { class: 't', id: 'accSymbol', value: acc.symbol || (acc.name ? stockSymbol(acc) : ''), placeholder: '例如 0056、2330、AAPL', autocapitalize: 'characters' });
+  const rowStock = el('div', {}, el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '股數（選填）' }), shares), el('div', {}, el('label', { text: '股價（選填）' }), price)),
+    el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '股票代號（填了就能自動更新股價）' }), sym));
   const rowCur = el('div', { class: 'grid2' }, el('div', {}, el('label', { text: '幣別' }), cur), el('div', {}, el('label', { text: '匯率（1 美元＝？台幣）' }), fx));
   // 電子錢包（儲值的錢）也是一個帳戶，放在「現金・電子支付」
   const rowWallet = el('div', { class: 'grid1', style: 'margin-bottom:8px' }, el('label', { text: '常見的電子錢包（點一下帶入名稱）' }),
@@ -1701,7 +1703,8 @@ function accEditor(acc, onDone, preset) {
     if (TYPES[t].flow) { data.currency = 'TWD'; data.fx = null; data.shares = null; data.price = null; const v = num(val); if (isNew || Math.round(valueOf(acc)) !== Math.round(v) || typeOf(acc) !== t) { data.base = v; data.baseAt = Date.now(); } }
     else { data.currency = cur.value; data.fx = cur.value === 'USD' ? (num(fx) || 32.6) : null; data.base = num(val); data.baseAt = Date.now();
       const hasS = ['tw_stock', 'us_stock'].includes(t) && shares.value !== '' && price.value !== '';
-      data.shares = hasS ? num(shares) : null; data.price = hasS ? num(price) : null; }
+      data.shares = hasS ? num(shares) : null; data.price = hasS ? num(price) : null;
+      data.symbol = ['tw_stock', 'us_stock'].includes(t) && sym.value.trim() ? sym.value.trim().toUpperCase().slice(0, 15) : null; }
     saveB.disabled = true;
     try {
       if (isNew) { data.order = Date.now(); await S.db.collection('accounts').add(data); } else await S.db.doc('accounts/' + acc.id).update(data);
@@ -1723,7 +1726,8 @@ function accEditor(acc, onDone, preset) {
 }
 function accMeta(a) {
   const ty = typeOf(a), bits = [];
-  if (a.shares != null && a.price != null && ['tw_stock', 'us_stock'].includes(ty)) bits.push(`${fmt.format(a.shares)} 股 × ${a.price}${a.currency === 'USD' ? ' USD' : ''}`);
+  if (['tw_stock', 'us_stock'].includes(ty)) bits.push(ty === 'us_stock' ? '美股' : '台股');
+  if (a.shares != null && a.price != null && ['tw_stock', 'us_stock'].includes(ty)) bits.push(`${fmt.format(a.shares)} 股 × ${a.price}${a.currency === 'USD' ? ` USD（匯率 ${a.fx}）` : ''}${stockSymbol(a) ? '' : '・沒有代號，無法自動更新'}`);
   else if (a.currency === 'USD' && !TYPES[ty].flow) bits.push(`USD ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(a.base || 0)} × ${a.fx}`);
   if (ty === 'card' && a.closeDay) {
     const cs = cycleStart(a.closeDay);
@@ -1735,44 +1739,93 @@ function accMeta(a) {
   if (a.note) bits.push(a.note);
   return bits.join('｜');
 }
+// 資產頁分頁：台股、美股合併成「股票」
+const GROUP_OF = (ty) => ty === 'tw_stock' || ty === 'us_stock' ? 'stock' : ty;
+const GLABEL = (g) => g === 'stock' ? '股票' : TYPES[g].label;
+const GCOLOR = (g) => g === 'stock' ? TYPES.tw_stock.color : TYPES[g].color;
+const GLIAB = (g) => g !== 'stock' && TYPES[g].liab;
+const GROUPS = ['bank', 'cash', 'card', 'stock', 'insurance', 'receivable', 'loan', 'other'];
+// 股票代號：有填用填的；沒填就從名稱抓（例如「0056 元大高股息」→ 0056、「AAPL 蘋果」→ AAPL）
+function stockSymbol(a) {
+  if (a.symbol) return String(a.symbol).trim().toUpperCase();
+  const n = String(a.name || '');
+  const tw = n.match(/(?:^|[^0-9])(\d{4,6}[A-Z]?)(?![0-9])/); if (typeOf(a) === 'tw_stock' && tw) return tw[1];
+  const us = n.match(/\b([A-Z]{1,5}(?:\.[A-Z])?)\b/); if (typeOf(a) === 'us_stock' && us) return us[1];
+  return tw ? tw[1] : us ? us[1] : '';
+}
+let stockBusy = false;
+async function updateStocks(silent) {
+  if (stockBusy || !S.db) return; stockBusy = true;
+  const list = S.accounts.filter(a => ['tw_stock', 'us_stock'].includes(typeOf(a)) && a.shares != null && a.shares !== '');
+  const btn = $('#stockUpd'); if (btn) { btn.disabled = true; btn.textContent = '更新中…'; }
+  try {
+    if (!list.length) { if (!silent) toast('先在股票裡填股數和代號'); return; }
+    const syms = [...new Set(list.map(stockSymbol).filter(Boolean))];
+    const r = await HanCloud.stockQuote(syms, list.some(a => a.currency === 'USD'));
+    let n = 0; const miss = [];
+    for (const a of list) {
+      const sym = stockSymbol(a), q = sym && r.quotes[sym];
+      if (!q) { miss.push(a.name); continue; }
+      const up = { price: q.price, priceAt: Date.now(), symbol: sym };
+      if (a.currency === 'USD' && r.usdtwd) up.fx = Math.round(r.usdtwd * 100) / 100;
+      await S.db.doc('accounts/' + a.id).update(up); Object.assign(a, up); n++;
+    }
+    try { localStorage.setItem('stockAt', String(Date.now())); } catch {}
+    if (!silent || miss.length) toast((n ? `已更新 ${n} 檔股價` : '沒有更新到股價') + (miss.length ? `；${miss.join('、')} 找不到代號，請在編輯裡填股票代號` : ''));
+  } catch (e) { if (!silent) toast(e.message || '股價更新失敗，請稍後再試'); }
+  finally { stockBusy = false; if (view === 'assets') renderAssets(); }
+}
+function maybeUpdateStocks() {
+  let at = 0; try { at = Number(localStorage.getItem('stockAt')) || 0; } catch {}
+  if (Date.now() - at > 15 * 60 * 1000 && S.accounts.some(a => ['tw_stock', 'us_stock'].includes(typeOf(a)) && a.shares != null)) updateStocks(true);
+}
 function renderAssets() {
   const T = totals();
   $('#aNW').textContent = money(T.nw); $('#aCash').textContent = short(T.cash); $('#aInv').textContent = short(T.inv); $('#aDebt').textContent = short(T.debt);
   const pos = ORDER.filter(k => !TYPES[k].liab && (T.byType[k] || 0) > 0), tot = pos.reduce((s, k) => s + T.byType[k], 0) || 1;
+  if (S.assetTab === 'tw_stock' || S.assetTab === 'us_stock') S.assetTab = 'stock';
   $('#alloc').replaceChildren(...pos.map(k => el('i', { style: `width:${T.byType[k] / tot * 100}%;background:${TYPES[k].color};opacity:.95`, title: TYPES[k].label })));
   const box = $('#groups'); box.replaceChildren();
   if (!S.accounts.length) { box.append(el('div', { class: 'card empty', text: S.loaded ? '還沒有帳戶，按右上「新增」' : '讀取中…' })); return; }
-  const present = ORDER.filter(g => S.accounts.some(a => typeOf(a) === g));
+  const present = GROUPS.filter(g => S.accounts.some(a => GROUP_OF(typeOf(a)) === g));
   if (S.assetTab !== 'all' && !present.includes(S.assetTab)) S.assetTab = 'all';
-  const sumOf = (g) => S.accounts.filter(a => typeOf(a) === g && a.inNW !== false).reduce((s, a) => s + valueOf(a), 0);
+  const sumOf = (g) => S.accounts.filter(a => GROUP_OF(typeOf(a)) === g && a.inNW !== false).reduce((s, a) => s + valueOf(a), 0);
   const pick = (g) => { S.assetTab = g; editingId = null; try { localStorage.setItem('assetTab', g); } catch {} renderAssets(); };
-  const SHORT = { all: '總覽', bank: '銀行', cash: '現金', card: '信用卡', tw_stock: '台股', us_stock: '美股', insurance: '保險', receivable: '應收', loan: '貸款', other: '其他' };
+  const SHORT = { all: '總覽', bank: '銀行', cash: '現金', card: '信用卡', stock: '股票', insurance: '保險', receivable: '應收', loan: '貸款', other: '其他' };
   const seg = el('div', { class: 'gseg ios-glass atabs', role: 'tablist', id: 'assetTabs' });
   for (const g of ['all', ...present]) {
     const on = g === S.assetTab;
-    seg.append(el('button', { class: on ? 'on' : '', role: 'tab', 'aria-selected': on ? 'true' : 'false', type: 'button', 'data-g': g, title: g === 'all' ? '總覽' : TYPES[g].label, text: SHORT[g] || TYPES[g].label, onclick: () => pick(g) }));
+    seg.append(el('button', { class: on ? 'on' : '', role: 'tab', 'aria-selected': on ? 'true' : 'false', type: 'button', 'data-g': g, title: g === 'all' ? '總覽' : GLABEL(g), text: SHORT[g] || GLABEL(g), onclick: () => pick(g) }));
   }
   const strip = el('div', { class: 'atabrow' }, seg, el('button', { class: 'aadd ios-glass', type: 'button', 'aria-label': '新增帳戶', text: '＋', onclick: () => $('#addAccBtn').click() }));
   const panel = el('div', { class: 'bpanel' });
   box.append(strip, panel);
   glassDrag(seg, { items: () => [...seg.querySelectorAll('button')], pick: (b) => pick(b.dataset.g), key: 'assets' });
   if (S.assetTab === 'all') {
-    const tot = present.filter(g => !TYPES[g].liab).reduce((s, g) => s + Math.max(0, sumOf(g)), 0) || 1;
+    const tot = present.filter(g => !GLIAB(g)).reduce((s, g) => s + Math.max(0, sumOf(g)), 0) || 1;
     const ul = el('ul', { class: 'list' });
     for (const g of present) {
-      const ty = TYPES[g], v = sumOf(g), cnt = S.accounts.filter(a => typeOf(a) === g).length;
+      const liab = GLIAB(g), v = sumOf(g), cnt = S.accounts.filter(a => GROUP_OF(typeOf(a)) === g).length;
       ul.append(el('li', { onclick: () => pick(g) },
-        el('span', { class: 'dotc', style: `background:${ty.color}` }),
-        el('div', { class: 'grow' }, el('div', { class: 'a', text: ty.label }), el('div', { class: 'b', text: `${cnt} 個・` + (ty.liab ? '負債' : `佔資產 ${Math.round(Math.max(0, v) / tot * 100)}%`) })),
-        el('div', { class: 'amtc ' + (ty.liab ? 'exp' : ''), text: money(v) }), el('span', { class: 'muted', text: '›' })));
+        el('span', { class: 'dotc', style: `background:${GCOLOR(g)}` }),
+        el('div', { class: 'grow' }, el('div', { class: 'a', text: GLABEL(g) }), el('div', { class: 'b', text: `${cnt} 個・` + (liab ? '負債' : `佔資產 ${Math.round(Math.max(0, v) / tot * 100)}%`) })),
+        el('div', { class: 'amtc ' + (liab ? 'exp' : ''), text: money(v) }), el('span', { class: 'muted', text: '›' })));
     }
     panel.append(ul);
     return;
   }
-  const g = S.assetTab, ty = TYPES[g];
-  const accs = sorted(S.accounts.filter(a => typeOf(a) === g));
-  panel.append(el('div', { class: 'sb', style: 'margin-bottom:4px' }, el('span', { class: 'muted small', text: ty.liab ? '目前欠款合計' : '合計（只算計入的）' }), el('b', { class: 'num ' + (ty.liab ? 'exp' : ''), style: 'font-size:18px', text: money(sumOf(g)) })));
+  const g = S.assetTab, gl = GLIAB(g);
+  const accs = sorted(S.accounts.filter(a => GROUP_OF(typeOf(a)) === g));
+  panel.append(el('div', { class: 'sb', style: 'margin-bottom:4px' }, el('span', { class: 'muted small', text: gl ? '目前欠款合計' : '合計（只算計入的）' }), el('b', { class: 'num ' + (gl ? 'exp' : ''), style: 'font-size:18px', text: money(sumOf(g)) })));
+  if (g === 'stock') {
+    let at = 0; try { at = Number(localStorage.getItem('stockAt')) || 0; } catch {}
+    const last = accs.map(a => a.priceAt || 0).reduce((x, y) => Math.max(x, y), 0) || at;
+    panel.append(el('div', { class: 'sb', style: 'margin:2px 0 8px;align-items:center' },
+      el('span', { class: 'small muted', id: 'stockAtLbl', text: last ? `股價更新於 ${new Date(last).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}・台股盤中約有 20 分鐘延遲` : '還沒更新過股價' }),
+      el('button', { class: 'btn ghost', id: 'stockUpd', type: 'button', style: 'padding:6px 12px;font-size:13px;white-space:nowrap', text: stockBusy ? '更新中…' : '更新股價', disabled: stockBusy ? '' : null, onclick: () => updateStocks(false) })));
+  }
   for (const a of accs) {
+    const ty = TYPES[typeOf(a)];
     const v = valueOf(a), editable = ty.flow || (a.shares == null && a.currency !== 'USD');
     const inp = el('input', { class: 't num', inputmode: 'decimal', value: fmt.format(Math.round(v)), 'aria-label': a.name });
     if (editable) {
@@ -1794,7 +1847,7 @@ function renderAssets() {
     if (editingId === a.id) row.append(accEditor(a, () => { editingId = null; renderAssets(); }));
     panel.append(row);
   }
-  panel.append(el('button', { class: 'btn ghost full', type: 'button', style: 'margin-top:12px', text: `＋ 新增到「${ty.label}」`, onclick: () => $('#addAccBtn').click() }));
+  panel.append(el('button', { class: 'btn ghost full', type: 'button', style: 'margin-top:12px', text: `＋ 新增到「${GLABEL(g)}」`, onclick: () => $('#addAccBtn').click() }));
 }
 
 const numIn = (id) => { const v = Number(String($(id).value).replace(/[,\s]/g, '')); return Number.isFinite(v) ? v : 0; };
@@ -2002,6 +2055,7 @@ function route() {
   for (const v of ['home', 'ledger', 'stats', 'assets', 'me', 'admin']) $('#v-' + v).hidden = v !== view;
   if (view === 'admin') renderAdmin();
   if (view === 'me') { renderMeal(); renderMe(); renderFaceSetting(); }
+  if (view === 'assets') setTimeout(maybeUpdateStocks, 300);
   $$('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === (view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view)));
   requestAnimationFrame(() => moveLens());
   $$('.vsw a').forEach(a => a.classList.toggle('on', a.dataset.sw === view));
@@ -2794,8 +2848,8 @@ function renderMe() {
   const z = String(zoomPref()); $$('#prefZoom button').forEach(b => b.classList.toggle('on', b.dataset.v === z));
   $('#prefHide').checked = PREF.get('hide', '0') === '1';
   const sel = $('#prefAsset');
-  if (!sel.options.length) sel.append(el('option', { value: 'all', text: '總覽' }), ...Object.entries(TYPES).map(([k, t]) => el('option', { value: k, text: t.label })));
-  sel.value = S.assetTab || 'all';
+  if (!sel.options.length) sel.append(el('option', { value: 'all', text: '總覽' }), ...GROUPS.map(k => el('option', { value: k, text: GLABEL(k) })));
+  sel.value = ['tw_stock', 'us_stock'].includes(S.assetTab) ? 'stock' : (S.assetTab || 'all');
 }
 function setupMe() {
   $$('#prefHome button').forEach(b => b.addEventListener('click', () => { S.homeView = b.dataset.v; try { localStorage.setItem('homeView', S.homeView); } catch {} renderMe(); toast(b.dataset.v === 'cal' ? '首頁會先顯示月曆' : '首頁會先顯示清單'); }));
@@ -2868,7 +2922,10 @@ function glassDrag(track, { items, pick, onClass = 'on', key }) {
 }
 function moveLens() { const t = $('nav.tabs .in'); if (t && t._glass) t._glass.sync(); }
 function setupTabDrag() {
-  glassDrag($('nav.tabs .in'), { items: () => $$('nav.tabs a'), pick: (a) => { location.hash = a.getAttribute('href'); } });
+  // 已經在首頁時再按一次「首頁」：回到記帳（不停在分帳）並捲回最上面
+  const homeAgain = () => { if (S.homeTab !== 'main') { S.homeTab = 'main'; try { localStorage.setItem('homeTab', 'main'); } catch {} renderHome(); } window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  glassDrag($('nav.tabs .in'), { items: () => $$('nav.tabs a'), pick: (a) => { if (a.dataset.v === 'home' && view === 'home') homeAgain(); else location.hash = a.getAttribute('href'); } });
+  $('nav.tabs a[data-v="home"]').addEventListener('click', (e) => { if (view === 'home') { e.preventDefault(); homeAgain(); } });
   glassDrag($('#typeSeg'), { items: () => $$('#typeSeg button'), pick: (b) => { F.type = b.dataset.t; renderSheet(); } });
   $$('.vsw').forEach(v => glassDrag(v, { items: () => [...v.querySelectorAll('a')], pick: (a) => { location.hash = a.getAttribute('href'); } }));
 }
@@ -3172,7 +3229,7 @@ async function start() {
   $('#remindBtn').addEventListener('click', () => scheduleReminders(false));
   $('#addAccBtn').addEventListener('click', () => {
     const f = $('#addAccForm'); f.hidden = !f.hidden; f.replaceChildren();
-    if (!f.hidden) { f.append(el('h2', { text: '新增帳戶或資產' }), accEditor(null, () => { f.hidden = true; f.replaceChildren(); }, S.assetTab !== 'all' ? S.assetTab : 'bank')); window.scrollTo(0, 0); }
+    if (!f.hidden) { f.append(el('h2', { text: '新增帳戶或資產' }), accEditor(null, () => { f.hidden = true; f.replaceChildren(); }, S.assetTab === 'stock' ? 'tw_stock' : S.assetTab !== 'all' ? S.assetTab : 'bank')); window.scrollTo(0, 0); }
   });
 
   setupAuthUI(); showInstallHint(); setupMe(); setupScrollLock(); setupSheetSwipe(); setupIosLook(); setupFaceLock(); setupTabDrag();

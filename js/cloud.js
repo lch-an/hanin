@@ -288,5 +288,15 @@ window.HanCloud = (() => {
     }
     return data.result;
   }
-  return { sb, auth, openDB, loadCatalog, analyzePolicy, lookupCard, admin, isNative, aiEnabled, push };
+  // 查股價（台股代號如 0056，美股如 AAPL）；fx=true 時一併回傳美元匯率
+  async function stockQuote(symbols, fx) {
+    const { data, error } = await sb.functions.invoke('stock-quote', { body: { symbols, fx: !!fx } });
+    if (error) {
+      let msg = '股價更新失敗，請稍後再試';
+      if (/Failed to send|not found|404/i.test(String(error.message))) msg = '股價服務還沒開通';
+      throw new Error(msg);
+    }
+    return data;
+  }
+  return { sb, auth, openDB, loadCatalog, analyzePolicy, lookupCard, stockQuote, admin, isNative, aiEnabled, push };
 })();
