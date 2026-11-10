@@ -58,12 +58,19 @@ button{font:inherit;color:inherit}
 .list{list-style:none;margin:0;padding:0}
 .list li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list li:last-child{border-bottom:0}
+html.pswipe,html.pswipe body{overflow-x:hidden}
+html.pswipe{overscroll-behavior-x:none}
 details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent}
 details.fold>summary::-webkit-details-marker{display:none}
 details.fold>summary h2{margin:0}
 details.fold>summary::after{content:'›';font-size:22px;line-height:1;color:var(--muted);transition:transform .2s}
 details.fold[open]>summary::after{transform:rotate(90deg)}
 details.fold[open]>summary{margin-bottom:10px}
+details.fold.sub{border-top:1px solid var(--line);padding:10px 0 2px}
+details.fold.sub>summary{min-height:32px}
+details.fold.sub>summary b{font-size:14px;flex:1}
+details.fold.sub>summary::after{font-size:18px}
+details.fold>summary>span.small{margin-left:auto;text-align:right}
 .list li.sw{position:relative;overflow:hidden;padding:0;display:block}
 .list li.sw>.swin{display:flex;align-items:center;gap:12px;padding:10px 2px;transition:transform .2s ease;will-change:transform}
 .list li.dayitems .list li.sw{padding:0}.list li.dayitems .list li.sw>.swin{padding:8px 2px}
@@ -491,7 +498,9 @@ body{background:transparent}
       <div class="sb mrow0" id="faceRow" hidden><div><b style="font-size:14px">Face ID 解鎖</b><div class="small muted">預設關閉，打開 App 就能直接用。想要隱私再開：打開 App 或離開超過 1 分鐘回來時要先通過 Face ID，辨識在手機上完成，不會上傳</div></div><label class="switch"><input type="checkbox" id="prefFace"><span></span></label></div>
       <div class="sb mrow0"><div><b style="font-size:14px">隱藏金額</b><div class="small muted">在外面打開 App 時，金額先模糊處理，點一下才顯示</div></div><label class="switch"><input type="checkbox" id="prefHide"><span></span></label></div>
     </details>
-    <div class="card" id="budgetCard"><div class="sb" style="margin-bottom:8px"><h2 style="margin:0">收入與預算 <small>數字都可以自己改</small></h2><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
+    <details class="card fold" id="budgetCard"><summary><div><h2>收入與預算</h2><div class="small muted" id="bSum" style="margin-top:2px"></div></div></summary>
+      <div class="sb" style="margin-bottom:6px"><span class="small muted">數字都可以自己改</span><button class="btn ghost" id="setupBtn" type="button" style="white-space:nowrap;padding:6px 12px;font-size:13px">一步一步設定</button></div>
+      <details class="fold sub" id="bSalFold"><summary><b>薪水與存錢</b><span class="small muted" id="bSalSum"></span></summary>
       <div class="bcalc">
         <label>每月實領薪水（實際入帳金額）<input class="t num" id="bSalary" inputmode="numeric" placeholder="例如 29500（2026 年基本工資）"><span class="small" id="bIncNote"></span></label>
         <div class="grid2"><label>發薪日<input class="t num" id="bPayday" inputmode="numeric" placeholder="例如 10"></label><label>薪水入帳帳戶<select class="t" id="bSalAcc"><option value="">不自動記</option></select></label></div>
@@ -499,8 +508,10 @@ body{background:transparent}
         <label>先存起來的比例（%）<input class="t num" id="bSave" inputmode="numeric"></label>
         <label>其他固定支出（訂閱以外）<input class="t num" id="bFixed" inputmode="numeric" placeholder="例如手機費、自己繳的保費"></label>
       </div>
+      </details>
+      <details class="fold sub" id="bSubFold"><summary><b>每月訂閱與固定扣款</b><span class="small muted" id="bSubSum"></span></summary>
       <div class="subs">
-        <div class="sb"><b style="font-size:14px">每月訂閱與固定扣款</b><span class="small muted" id="fxLbl"></span></div>
+        <div class="sb"><span></span><span class="small muted" id="fxLbl"></span></div>
         <ul class="list" id="subList"></ul>
         <div class="subadd">
           <input class="t" id="subName" placeholder="名稱，例如 Spotify">
@@ -512,11 +523,14 @@ body{background:transparent}
         </div>
         <div class="small muted">填了扣款日和扣款帳戶，每個月到那天就會自動記一筆，不用手動記；房租、保費、手機費也可以加在這裡，按「編輯」改分類。外幣訂閱依當天匯率換算成台幣，刷台灣的卡通常還有約 1.5% 國外交易手續費，這裡沒算進去。</div>
       </div>
+      </details>
+      <details class="fold sub" id="bCalcFold"><summary><b>預算怎麼算</b><span class="small muted" id="bCalcSum"></span></summary>
       <div class="formula" id="bFormula"></div>
       <div class="flex" style="margin-top:10px"><label class="small muted" style="white-space:nowrap">目前預算</label><input class="t num" id="setBudget" inputmode="numeric"><button class="btn ghost" id="useSuggest" type="button" style="white-space:nowrap">用建議值</button><button class="btn" id="setBudgetBtn" type="button" style="white-space:nowrap">儲存</button></div>
       <div class="small muted" id="budgetMode" style="margin-top:4px"></div>
       <div class="small muted" style="margin-top:10px">算法：實領薪水 − 先存起來的 − 訂閱 − 其他固定支出 ＝ 每月生活費。獎金等不固定收入不算進去。</div>
-    </div>
+      </details>
+    </details>
     <details class="card fold" id="mealCard"><summary><h2>三餐提醒 <small>到時間問你吃什麼</small></h2></summary><div id="mealBox"></div></details>
     <details class="card fold" id="dataCard"><summary><h2>資料與提醒 <small>扣款提醒、備份</small></h2></summary>
       <div class="sb" style="margin-bottom:10px" id="remindRow"><div><b style="font-size:14px">扣款提醒</b><div class="small muted">信用卡扣款日前一天、訂閱扣款當天晚上 8 點提醒你</div></div><button class="btn ghost" id="remindBtn" type="button" style="white-space:nowrap">開啟</button></div>
@@ -668,7 +682,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v38';
+const APP_VER = 'v39';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -2014,8 +2028,17 @@ function updateFormula() {
     el('div', { class: 'fl' }, el('span', { text: '− 其他固定支出' }), el('b', { class: 'num', text: '−' + fmt.format(g.fixed) })),
     el('div', { class: 'fl tot' }, el('span', { text: '＝ 建議每月生活費' }), el('b', { class: 'num', text: money(g.living) })),
     el('div', { class: 'fl sub' }, el('span', { text: '平均每天' }), el('span', { class: 'num', text: money(g.living / 30) })));
+  try { updateBudgetSums(); } catch {}
 }
-function updateBudgetMode() { const st = S.settings; $('#budgetMode').textContent = st.budgetAuto !== false && budgetFromSettings(st) != null ? '跟著上面的公式自動更新' : '自訂金額，不會跟著公式變（按「用建議值」改回自動）'; }
+function updateBudgetSums() {
+  const st = S.settings, g = suggestBudget(), b = effBudget(), subs = st.subs || [];
+  const salAcc = st.salaryAcc && accById(st.salaryAcc);
+  $('#bSum').textContent = `每月生活費 ${money(b)}・每天約 ${money(b / 30)}`;
+  $('#bSalSum').textContent = `${money(Number(st.salary) || 0)}・存 ${st.saveRate ?? 20}%${st.payday ? `・${st.payday} 號入帳${salAcc ? '（' + salAcc.name + '）' : ''}` : ''}`;
+  $('#bSubSum').textContent = `${subs.length} 項・每月 ${money(g.subs)}`;
+  $('#bCalcSum').textContent = st.budgetAuto !== false ? '自動跟著公式' : '自訂金額';
+}
+function updateBudgetMode() { updateBudgetSums(); const st = S.settings; $('#budgetMode').textContent = st.budgetAuto !== false && budgetFromSettings(st) != null ? '跟著上面的公式自動更新' : '自訂金額，不會跟著公式變（按「用建議值」改回自動）'; }
 function renderBudgetCard() {
   const st = S.settings, act = document.activeElement;
   if (!act || !act.closest('#budgetCard')) {
@@ -2050,7 +2073,13 @@ function route() {
   if (/(^|&)(access_token|error|error_code|type)=/.test(h)) return; // 驗證信帶回來的參數，交給登入流程處理
   if (h.startsWith('add=')) { const k = h.slice(4); history.replaceState(null, '', '#home'); route(); openMealEntry(k); return; }
   view = ['home', 'ledger', 'stats', 'assets', 'me'].includes(h) || (h === 'admin' && S.isAdmin) ? h : 'home';
+  const prevView = route._last; route._last = view;
   for (const v of ['home', 'ledger', 'stats', 'assets', 'me', 'admin']) $('#v-' + v).hidden = v !== view;
+  // 點分頁切換時也帶一點滑動，方向跟分頁位置一致（用手滑的已經有動畫，不重複）
+  if (!pageSwiping && prevView && prevView !== view && !reduceMotion()) {
+    const a = pageIdx(prevView), b = pageIdx(view), sec = $('#v-' + view);
+    if (a >= 0 && b >= 0 && a !== b && sec.animate) sec.animate([{ transform: `translateX(${b > a ? 28 : -28}px)`, opacity: 0.4 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: 'cubic-bezier(.22,.8,.24,1)' });
+  }
   if (view === 'admin') renderAdmin();
   if (view === 'me') { renderMeal(); renderMe(); renderFaceSetting(); }
   if (view === 'assets') setTimeout(maybeUpdateStocks, 300);
@@ -2061,25 +2090,83 @@ function route() {
   render(); window.scrollTo(0, 0);
 }
 
-// 首頁、明細、資產、設定之間左右滑動切換
+// 首頁、明細、資產、設定之間左右滑動切換：頁面跟著手指走，放開後滑順地切過去
+const PAGE_ORDER = ['home', 'ledger', 'assets', 'me'];
+const pageIdx = (v) => PAGE_ORDER.indexOf(v === 'stats' ? 'ledger' : v === 'admin' ? 'me' : v);
+const reduceMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+function renderView(v) {
+  if (v === 'home') renderHome();
+  if (v === 'ledger') renderLedger();
+  if (v === 'assets') renderAssets();
+  if (v === 'me') { renderMeal(); renderMe(); renderFaceSetting(); renderBudgetCard(); updateBudgetMode(); }
+}
+let pageSwiping = false;
 (function setupPageSwipe() {
-  const ORDER_V = ['home', 'ledger', 'assets', 'me'];
-  let x0 = 0, y0 = 0, t0 = 0, ok = false;
+  const EASE = 'cubic-bezier(.22,.8,.24,1)';
+  let x0 = 0, y0 = 0, t0 = 0, ok = false, lock = null, cur = null, nxt = null, target = null, W = 0, lastX = 0, lastT = 0, vel = 0, dx = 0;
   const blocked = (t) => !!t.closest('input,textarea,select,button.swdel,nav,.gseg,.vsw,.seg,.accs,.datechips,.tpl,.sheet,#pModal,.lock,[data-noswipe]') || (() => { for (let n = t; n && n !== document.body; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; })();
+  const reset = (el) => { if (!el) return; el.style.transition = ''; el.style.transform = ''; el.style.position = ''; el.style.top = ''; el.style.left = ''; el.style.width = ''; el.style.zIndex = ''; el.style.willChange = ''; el.style.pointerEvents = ''; };
+  const begin = (dir) => {
+    cur = $('#v-' + view); const i = pageIdx(view); target = PAGE_ORDER[i + dir] || null;
+    const r = cur.getBoundingClientRect(); W = r.width || innerWidth;
+    document.documentElement.classList.add('pswipe');
+    cur.style.willChange = 'transform';
+    if (target) {
+      nxt = $('#v-' + target);
+      try { renderView(target); } catch {}
+      nxt.hidden = false;
+      Object.assign(nxt.style, { position: 'fixed', top: (cur.offsetTop) + 'px', left: r.left + 'px', width: r.width + 'px', zIndex: '1', willChange: 'transform', pointerEvents: 'none', transform: `translateX(${dir * W}px)` });
+    }
+  };
+  const move = (x) => {
+    const dir = dx < 0 ? 1 : -1;
+    const d = target ? x : x * 0.25; // 沒有下一頁時像橡皮筋
+    cur.style.transform = `translateX(${d}px)`;
+    if (nxt) nxt.style.transform = `translateX(${d + dir * W}px)`;
+  };
+  const finish = (go) => {
+    const dir = dx < 0 ? 1 : -1, dur = Math.max(160, Math.min(320, (go ? W - Math.abs(dx) : Math.abs(dx)) / Math.max(0.6, Math.abs(vel)) )) | 0;
+    const tr = `transform ${dur}ms ${EASE}`;
+    const c = cur, n = nxt, t = target, w = W;
+    c.style.transition = tr; if (n) n.style.transition = tr;
+    requestAnimationFrame(() => {
+      c.style.transform = go ? `translateX(${-dir * w}px)` : 'translateX(0)';
+      if (n) n.style.transform = go ? 'translateX(0)' : `translateX(${dir * w}px)`;
+    });
+    setTimeout(() => {
+      if (go && t) { pageSwiping = true; reset(n); c.hidden = true; reset(c); location.hash = '#' + t; setTimeout(() => { pageSwiping = false; }, 50); }
+      else { reset(c); if (n) { n.hidden = true; reset(n); } }
+      document.documentElement.classList.remove('pswipe');
+    }, dur + 20);
+    cur = nxt = target = null; lock = null;
+  };
   document.addEventListener('touchstart', (e) => {
-    const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; t0 = Date.now();
-    ok = e.touches.length === 1 && x0 > 24 && x0 < innerWidth - 24 && !$('#sheet').classList.contains('on') && $('#pModal').hidden && !blocked(e.target);
+    const p = e.touches[0]; x0 = lastX = p.clientX; y0 = p.clientY; t0 = lastT = Date.now(); lock = null; dx = 0; vel = 0;
+    ok = e.touches.length === 1 && x0 > 16 && x0 < innerWidth - 16 && pageIdx(view) >= 0 && !$('#sheet').classList.contains('on') && $('#pModal').hidden && !blocked(e.target) && !document.documentElement.classList.contains('pswipe');
   }, { passive: true });
-  document.addEventListener('touchend', (e) => {
-    if (!ok || window.__rowSwipe) return; ok = false;
-    if (swOpenLi && swOpenLi.isConnected) { swClose(swOpenLi); return; } swOpenLi = null;
-    const p = e.changedTouches[0], dx = p.clientX - x0, dy = p.clientY - y0;
-    if (Date.now() - t0 > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
-    const cur = ORDER_V.indexOf(view === 'stats' ? 'ledger' : view === 'admin' ? 'me' : view);
-    const next = ORDER_V[cur + (dx < 0 ? 1 : -1)];
-    if (cur < 0 || !next) return;
-    location.hash = '#' + next;
-  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!ok || window.__rowSwipe) { if (lock === 'h') finish(false); ok = false; return; }
+    const p = e.touches[0], mx = p.clientX - x0, my = p.clientY - y0;
+    if (!lock) {
+      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+      if (Math.abs(mx) > Math.abs(my) * 1.3) {
+        if (swOpenLi && swOpenLi.isConnected) { swClose(swOpenLi); ok = false; return; }
+        if (mx < 0 && e.target.closest && e.target.closest('li.sw')) { ok = false; return; } // 在記帳紀錄上往左滑是刪除
+        lock = 'h'; dx = mx; begin(mx < 0 ? 1 : -1);
+      } else { lock = 'v'; ok = false; return; }
+    }
+    if (lock !== 'h') return;
+    if (e.cancelable) e.preventDefault();
+    const now = Date.now(); vel = (p.clientX - lastX) / Math.max(1, now - lastT); lastX = p.clientX; lastT = now;
+    dx = mx; move(mx);
+  }, { passive: false });
+  const end = () => {
+    if (lock !== 'h') { ok = false; return; }
+    const go = !!target && (Math.abs(dx) > W * 0.28 || (Math.abs(vel) > 0.45 && Math.sign(vel) === Math.sign(dx)));
+    finish(go); ok = false;
+  };
+  document.addEventListener('touchend', end, { passive: true });
+  document.addEventListener('touchcancel', end, { passive: true });
 })();
 
 // ---------- data ----------
