@@ -59,6 +59,8 @@ button{font:inherit;color:inherit}
 .list li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .list li:last-child{border-bottom:0}
 html.pswipe,html.pswipe body{overflow-x:hidden}
+.wrap.pg{display:grid;grid-template-columns:minmax(0,1fr);align-items:start}
+.wrap.pg>section.pg-a{grid-area:2/1}
 #v-home,#v-ledger,#v-stats,#v-assets,#v-me{touch-action:pan-y}
 /* 滑動中暫停卡片的毛玻璃（最吃效能），放開後恢復 */
 html.pswipe #v-home *,html.pswipe #v-ledger *,html.pswipe #v-stats *,html.pswipe #v-assets *,html.pswipe #v-me *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
@@ -686,7 +688,7 @@ const CAT_ALIAS = { '人情': '禮金紅包' };
 const normTx = (t) => (CAT_ALIAS[t.category] ? { ...t, category: CAT_ALIAS[t.category] } : t);
 const status = (t) => { const b = $('#status'); b.hidden = !t; b.textContent = t || ''; };
 
-const APP_VER = 'v42';
+const APP_VER = 'v43';
 const S = { homeView: (() => { try { return localStorage.getItem('homeView') || 'list'; } catch { return 'list'; } })(), homeDay: null, openDays: new Set(), assetTab: (() => { try { return localStorage.getItem('assetTab') || 'all'; } catch { return 'all'; } })(), db: null, accounts: [], txMonth: new Map(), txRecent: new Map(), settings: { budget: 20000, salary: 0, saveRate: 20, fixed: 0, usdRate: 32.6, subs: [] }, month: monthOf(todayStr()), selDay: null, unsubMonth: null, unsubRecent: null, recentFrom: null, loaded: false, closed: new Set() };
 try { JSON.parse(localStorage.getItem('closedGroups') || '[]').forEach(g => S.closed.add(g)); } catch {}
 
@@ -2118,32 +2120,42 @@ let pageSwiping = false, preTimer = null;
 function schedulePrerender() {
   clearTimeout(preTimer);
   preTimer = setTimeout(() => {
-    const go = () => { const i = pageIdx(view); for (const v of [PAGE_ORDER[i - 1], PAGE_ORDER[i + 1]]) if (v && preSeq[v] !== renderSeq && $('#v-' + v).hidden) { try { renderView(v); preSeq[v] = renderSeq; } catch {} } };
-    window.requestIdleCallback ? requestIdleCallback(go, { timeout: 1200 }) : go();
-  }, 250);
+    const i = pageIdx(view), todo = [PAGE_ORDER[i + 1], PAGE_ORDER[i - 1]].filter(Boolean);
+    const one = () => {
+      if (document.documentElement.classList.contains('pswipe')) { preTimer = setTimeout(one, 400); return; } // 滑動中不要畫
+      const v = todo.shift(); if (!v) return;
+      if (preSeq[v] !== renderSeq && $('#v-' + v).hidden) { try { renderView(v); preSeq[v] = renderSeq; } catch {} }
+      if (todo.length) preTimer = setTimeout(() => window.requestIdleCallback ? requestIdleCallback(one, { timeout: 1500 }) : one(), 120);
+    };
+    window.requestIdleCallback ? requestIdleCallback(one, { timeout: 1500 }) : one();
+  }, 600);
 }
 (function setupPageSwipe() {
   const EASE = 'cubic-bezier(.25,1,.5,1)'; // 快速起步、柔和減速停下（接近 iOS 換頁的手感）
   let dirL = 1, x0 = 0, y0 = 0, t0 = 0, ok = false, lock = null, cur = null, nxt = null, target = null, W = 0, lastX = 0, lastT = 0, vel = 0, dx = 0;
   const blocked = (t) => !!t.closest('input,textarea,select,button.swdel,nav,.gseg,.vsw,.seg,.accs,.datechips,.tpl,.sheet,#pModal,.lock,[data-noswipe]') || (() => { for (let n = t; n && n !== document.body; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; })();
-  const reset = (el) => { if (!el) return; el.style.transition = ''; el.style.transform = ''; el.style.position = ''; el.style.top = ''; el.style.left = ''; el.style.width = ''; el.style.zIndex = ''; el.style.willChange = ''; el.style.pointerEvents = ''; };
+  // 兩頁疊在同一格（CSS grid）裡左右移動：寬度、字級縮放都跟原本一樣，不會先被壓縮再展開
+  let Z = 1, SY = 0;
+  const reset = (el) => { if (!el) return; el.style.transition = ''; el.style.transform = ''; el.style.willChange = ''; el.style.pointerEvents = ''; el.classList.remove('pg-a'); };
+  const tx = (el, x, y) => { el.style.transform = `translate3d(${x / Z}px,${(y || 0) / Z}px,0)`; };
   const begin = (dir) => {
     cur = $('#v-' + view); const i = pageIdx(view); target = PAGE_ORDER[i + dir] || null;
-    const r = cur.getBoundingClientRect(); W = r.width || innerWidth;
+    Z = parseFloat(getComputedStyle(cur).zoom) || 1; SY = window.scrollY;
+    W = cur.getBoundingClientRect().width || innerWidth;
     document.documentElement.classList.add('pswipe');
     cur.style.willChange = 'transform';
     if (target) {
       nxt = $('#v-' + target);
       if (preSeq[target] !== renderSeq) { try { renderView(target); preSeq[target] = renderSeq; } catch {} }
-      nxt.hidden = false;
-      Object.assign(nxt.style, { position: 'fixed', top: (cur.offsetTop) + 'px', left: r.left + 'px', width: r.width + 'px', zIndex: '1', willChange: 'transform', pointerEvents: 'none', transform: `translate3d(${dir * W}px,0,0)` });
+      $('#appWrap').classList.add('pg'); cur.classList.add('pg-a'); nxt.classList.add('pg-a');
+      nxt.hidden = false; nxt.style.willChange = 'transform'; nxt.style.pointerEvents = 'none';
+      tx(nxt, dir * W, SY); // 下一頁從它的最上面開始顯示
     }
   };
   const move = (x) => {
     const dir = dirL;
     const d = target ? x : x * 0.25; // 沒有下一頁時像橡皮筋
-    cur.style.transform = `translate3d(${d}px,0,0)`;
-    if (nxt) nxt.style.transform = `translate3d(${d + dir * W}px,0,0)`;
+    tx(cur, d); if (nxt) tx(nxt, d + dir * W, SY);
   };
   const finish = (go) => {
     // 放開時沿用手指的速度：甩得快就短、慢慢拉就長一點，最後用減速曲線停下（像 iOS）
@@ -2151,17 +2163,17 @@ function schedulePrerender() {
     const dur = Math.round(Math.max(180, Math.min(420, left / Math.max(0.9, Math.abs(vel)) * 1.6)));
     const tr = `transform ${dur}ms ${EASE}`;
     const c = cur, n = nxt, t = target, w = W;
+    const sy = SY;
     c.style.transition = tr; if (n) n.style.transition = tr;
-    c.style.transform = go ? `translate3d(${-dir * w}px,0,0)` : 'translate3d(0,0,0)';
-    if (n) n.style.transform = go ? 'translate3d(0,0,0)' : `translate3d(${dir * w}px,0,0)`;
+    tx(c, go ? -dir * w : 0); if (n) tx(n, go ? 0 : dir * w, sy);
     let done = false;
     const settle = () => {
       if (done) return; done = true;
       if (go && t) {
         // 動畫結束當下直接換頁：下一頁已經畫好，不重畫、不等 hashchange，避免停一下
-        c.hidden = true; reset(c); reset(n);
+        c.hidden = true; reset(c); reset(n); $('#appWrap').classList.remove('pg');
         pageSwiping = true; history.pushState(null, '', '#' + t); route(); pageSwiping = false;
-      } else { reset(c); if (n) { n.hidden = true; reset(n); } }
+      } else { reset(c); if (n) { n.hidden = true; reset(n); } $('#appWrap').classList.remove('pg'); }
       requestAnimationFrame(() => document.documentElement.classList.remove('pswipe')); // 下一幀再恢復毛玻璃，分散重繪
     };
     (n || c).addEventListener('transitionend', settle, { once: true });
